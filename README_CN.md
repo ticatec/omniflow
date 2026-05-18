@@ -258,21 +258,22 @@ export default async function pipeline(ctx) {
 
 ```bash
 # 部署平台服务的测试环境
-omniflow run my-app/platform test
+omniflow run -e test my-app/platform frontend-deploy
+
+# 在一个环境下同时运行多个命令
+omniflow run -e test my-app/platform frontend-deploy backend-build
 
 # 部署微服务的生产环境
-omniflow run my-app/micro-services prod
-
-# 执行特定命令
-omniflow run my-app/platform test frontend-deploy
+omniflow run -e prod my-app/micro-services deploy
 ```
 
 ## CLI 命令
 
 ```bash
 # 运行部署（使用缓存的配置）
-omniflow run <project-path> <environment> [command]
+omniflow run -e <environment> <project-path> <command> [command...]
 # project-path 支持嵌套路径，如: my-app/platform
+# 可同时运行多个命令，按顺序执行
 
 # 列出所有项目
 omniflow list projects
@@ -409,9 +410,12 @@ projects:
     REPLICAS: "3"
   repos:                   # 必需
     git: https://...
+    # merge_strategy: github  # 可选（未设置时使用 GIT_MERGE_STRATEGY 环境变量）
   environments:            # 必需
     - name: test
 ```
+
+**注意：** `merge_strategy` 也可以通过 `GIT_MERGE_STRATEGY` 环境变量全局设置。如果项目配置中未指定，则使用环境变量的值。
 
 ### 环境配置
 
@@ -421,7 +425,6 @@ environments:
     description: 测试环境    # 描述
     branch: main-test       # 目标分支
     merge_from: dev-main    # 合并来源分支（可选）
-    merge_strategy: github  # MR/PR 策略: github, gitlab, forgejo（可选）
     vars:                   # 环境变量（可选）
       API_URL: https://test.api.com
     commands:               # 可用命令列表（可选）

@@ -4,8 +4,6 @@ import path from 'path'
 import os from 'os'
 import { promises as fs } from 'fs'
 import YAML from 'yaml'
-import { exec } from 'child_process'
-import { promisify } from 'util'
 import type {
   OmniflowConfig,
   ProjectDefinition,
@@ -15,28 +13,30 @@ import type {
   ProjectNode
 } from '../types/config.js'
 
-const execAsync = promisify(exec)
-
 export class OmniflowConfigLoader {
   private config: OmniflowConfig | null = null
+  private initialized = false
 
   /**
-   * Fetch configuration from git repository
-   * Uses environment variables: OMNIFLOW_CONFIG_REPO, OMNIFLOW_CONFIG_BRANCH
+   * Ensure configuration is initialized (fetch from git if needed)
    */
-  private async fetchFromGit(): Promise<OmniflowConfig> {
+  private async ensureInitialized(): Promise<void> {
+    if (this.initialized) return
+
     const {
       OMNIFLOW_CONFIG_REPO,
       OMNIFLOW_CONFIG_BRANCH = 'main',
       OMNIFLOW_CONFIG_FILE = 'config.yaml',
       GIT_USERNAME,
-      GIT_PASSWORD
+      GIT_PASSWORD,
+      GIT_TOKEN
     } = process.env
 
     if (!OMNIFLOW_CONFIG_REPO) {
       throw new Error(
-        'OMNIFLOW_CONFIG_REPO environment variable is required.\n' +
-        'Set it with: export OMNIFLOW_CONFIG_REPO=https://git.example.com/omniflow/config.git'
+        '\n❌ Configuration error: OMNIFLOW_CONFIG_REPO environment variable is not set\n' +
+        'Please set the configuration repository URL:\n' +
+        '  export OMNIFLOW_CONFIG_REPO=https://your-git-repo/config.git\n'
       )
     }
 
@@ -45,83 +45,55 @@ export class OmniflowConfigLoader {
     const configDir = path.join(OMNIFLOW_HOME, 'config')
     const configPath = path.join(configDir, OMNIFLOW_CONFIG_FILE)
 
-    try {
-      // Build authenticated URL
-      let repoUrl = OMNIFLOW_CONFIG_REPO
-      if (GIT_USERNAME && GIT_PASSWORD) {
-        try {
-          const urlObj = new URL(OMNIFLOW_CONFIG_REPO)
-          urlObj.username = GIT_USERNAME
-          urlObj.password = GIT_PASSWORD
-          repoUrl = urlObj.toString()
-        } catch {
-          // Invalid URL, use as-is
-        }
-      }
+    // Check if config file exists
+    const configExists = await fs.access(configPath).then(() => true).catch(() => false)
 
-      // Check if config file exists
-      const configExists = await fs.access(configPath).then(() => true).catch(() => false)
-
-      if (configExists) {
-        // Read existing config file directly
-        const content = await fs.readFile(configPath, 'utf-8')
-        const rawConfig = YAML.parse(content)
-
-        // Validate required fields
-        if (!rawConfig.omniflow) {
-          throw new Error('Missing "omniflow" section in configuration')
-        }
-
-        if (!rawConfig.projects) {
-          throw new Error('Missing "projects" section in configuration')
-        }
-
-        return rawConfig
-      } else {
-        // Create config directory and clone config repo to get initial config
-        await fs.mkdir(configDir, { recursive: true })
-
-        // Clone to a temporary location to extract config.yaml
-        const tempDir = path.join(OMNIFLOW_HOME, '.tmp_config')
-        await fs.mkdir(tempDir, { recursive: true })
-
-        const cloneCmd = `git clone --depth 1 --branch ${OMNIFLOW_CONFIG_BRANCH} --single-branch ${repoUrl} ${tempDir}`
-
-        await execAsync(cloneCmd, {
-          env: {
-            ...process.env,
-            GIT_TERMINAL_PROMPT: '0'
-          }
-        })
-
-        // Copy config.yaml to the target location
-        const tempConfigPath = path.join(tempDir, OMNIFLOW_CONFIG_FILE)
-        const content = await fs.readFile(tempConfigPath, 'utf-8')
-
-        await fs.writeFile(configPath, content, 'utf-8')
-
-        // Clean up temp directory
-        await fs.rm(tempDir, { recursive: true, force: true })
-
-        const rawConfig = YAML.parse(content)
-
-        // Validate required fields
-        if (!rawConfig.omniflow) {
-          throw new Error('Missing "omniflow" section in configuration')
-        }
-
-        if (!rawConfig.projects) {
-          throw new Error('Missing "projects" section in configuration')
-        }
-
-        return rawConfig
-      }
-    } catch (error) {
-      if ((error as any).code === 'ENOENT') {
-        throw new Error(`Configuration file not found: ${configPath}`)
-      }
-      throw new Error(`Failed to load config: ${(error as Error).message}`)
+    if (configExists) {
+      this.initialized = true
+      return
     }
+
+    // Build authenticated URL
+    let repoUrl = OMNIFLOW_CONFIG_REPO
+    const password = GIT_TOKEN || GIT_PASSWORD
+    if (GIT_USERNAME && password) {
+      try {
+        const urlObj = new URL(OMNIFLOW_CONFIG_REPO)
+        urlObj.username = GIT_USERNAME
+        urlObj.password = password
+        repoUrl = urlObj.toString()
+      } catch {
+        // Invalid URL, use as-is
+      }
+    }
+
+    // Clone config repository
+    console.log(`\n📋 Initializing omniflow configuration...`)
+    console.log(`   Repository: ${OMNIFLOW_CONFIG_REPO}`)
+    console.log(`   Branch: ${OMNIFLOW_CONFIG_BRANCH}`)
+    console.log(`   Target: ${configDir}\n`)
+
+    try {
+      // Clone the config repository
+      const { execaCommand } = await import('execa')
+      await execaCommand(`git clone --depth 1 --branch ${OMNIFLOW_CONFIG_BRANCH} --single-branch ${repoUrl} ${configDir}`, {
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+      })
+
+      // Verify config.yaml exists
+      await fs.access(configPath)
+
+      console.log('✅ Configuration initialized\n')
+    } catch (error) {
+      console.error(`\n❌ Failed to initialize configuration: ${(error as Error).message}\n`)
+      console.error('Please check:')
+      console.error('  - OMNIFLOW_CONFIG_REPO URL is correct')
+      console.error('  - Git authentication is configured (GIT_USERNAME, GIT_TOKEN)')
+      console.error('  - Network connectivity\n')
+      throw error
+    }
+
+    this.initialized = true
   }
 
   /**
@@ -133,10 +105,38 @@ export class OmniflowConfigLoader {
       return this.config
     }
 
-    // Fetch from git and cache
-    const rawConfig = await this.fetchFromGit()
-    this.config = this.resolveEnvVars(rawConfig)
-    return this.config
+    // Ensure configuration is initialized
+    await this.ensureInitialized()
+
+    // Read and parse config file
+    const {
+      OMNIFLOW_CONFIG_FILE = 'config.yaml'
+    } = process.env
+
+    const OMNIFLOW_HOME = process.env.OMNIFLOW_HOME || path.join(os.homedir(), '.omniflow')
+    const configPath = path.join(OMNIFLOW_HOME, 'config', OMNIFLOW_CONFIG_FILE)
+
+    try {
+      const content = await fs.readFile(configPath, 'utf-8')
+      const rawConfig = YAML.parse(content)
+
+      // Validate required fields
+      if (!rawConfig.omniflow) {
+        throw new Error('Missing "omniflow" section in configuration')
+      }
+
+      if (!rawConfig.projects) {
+        throw new Error('Missing "projects" section in configuration')
+      }
+
+      this.config = this.resolveEnvVars(rawConfig)
+      return this.config
+    } catch (error) {
+      if ((error as any).code === 'ENOENT') {
+        throw new Error(`Configuration file not found: ${configPath}`)
+      }
+      throw error
+    }
   }
 
   /**
@@ -279,7 +279,6 @@ export class OmniflowConfigLoader {
     password?: string
     merge_from?: string
     strategy?: string
-    merge_method?: 'merge' | 'squash' | 'rebase'
   } | null> {
     const config = await this.load()
     const pathParts = projectPath.split('/')
@@ -304,8 +303,6 @@ export class OmniflowConfigLoader {
     // Determine branch
     let targetBranch = 'main'
     let mergeFrom: string | undefined
-    let strategy: string | undefined
-    let mergeMethod: 'merge' | 'squash' | 'rebase' | undefined
 
     if (envName && project.environments) {
       // Find environment config by name
@@ -313,14 +310,15 @@ export class OmniflowConfigLoader {
       if (envConfig) {
         targetBranch = envConfig.branch
         mergeFrom = envConfig.merge_from
-        strategy = envConfig.merge_strategy
-        mergeMethod = envConfig.merge_method
       }
     } else if (projectRepos?.branch) {
       targetBranch = projectRepos.branch
     } else if (globalGit?.default_branch) {
       targetBranch = globalGit.default_branch
     }
+
+    // Strategy comes from project repos level or GIT_MERGE_STRATEGY env var
+    const strategy = projectRepos?.merge_strategy || process.env.GIT_MERGE_STRATEGY
 
     // Merge configuration (project takes precedence)
     return {
@@ -329,8 +327,7 @@ export class OmniflowConfigLoader {
       username: projectRepos?.username || globalGit?.username,
       password: projectRepos?.password || globalGit?.password,
       merge_from: mergeFrom,
-      strategy: strategy,
-      merge_method: mergeMethod
+      strategy: strategy
     }
   }
 
@@ -381,79 +378,36 @@ export class OmniflowConfigLoader {
    * Reload configuration (fetches from git again)
    */
   async reload(): Promise<void> {
-    this.config = null
-    await this.load()
-  }
-
-  /**
-   * Update config from git repository
-   * Fetches the latest config.yaml and commands.js from the config repo
-   */
-  async updateConfig(): Promise<void> {
     const {
-      OMNIFLOW_CONFIG_REPO,
-      OMNIFLOW_CONFIG_BRANCH = 'main',
-      OMNIFLOW_CONFIG_FILE = 'config.yaml',
-      OMNIFLOW_COMMANDS_FILE = 'commands.js',
-      GIT_USERNAME,
-      GIT_PASSWORD
+      OMNIFLOW_CONFIG_BRANCH = 'main'
     } = process.env
-
-    if (!OMNIFLOW_CONFIG_REPO) {
-      throw new Error('OMNIFLOW_CONFIG_REPO environment variable is required')
-    }
 
     const OMNIFLOW_HOME = process.env.OMNIFLOW_HOME || path.join(os.homedir(), '.omniflow')
     const configDir = path.join(OMNIFLOW_HOME, 'config')
 
-    // Build authenticated URL
-    let repoUrl = OMNIFLOW_CONFIG_REPO
-    if (GIT_USERNAME && GIT_PASSWORD) {
-      try {
-        const urlObj = new URL(OMNIFLOW_CONFIG_REPO)
-        urlObj.username = GIT_USERNAME
-        urlObj.password = GIT_PASSWORD
-        repoUrl = urlObj.toString()
-      } catch {
-        // Invalid URL, use as-is
-      }
-    }
-
-    // Clone to a temporary location
-    const tempDir = path.join(OMNIFLOW_HOME, '.tmp_config')
-    await fs.mkdir(tempDir, { recursive: true })
+    console.log('🔄 Fetching latest configuration from git...')
 
     try {
-      const cloneCmd = `git clone --depth 1 --branch ${OMNIFLOW_CONFIG_BRANCH} --single-branch ${repoUrl} ${tempDir}`
-      await execAsync(cloneCmd, {
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
-      })
+      const { execaCommand } = await import('execa')
 
-      // Ensure config directory exists
-      await fs.mkdir(configDir, { recursive: true })
+      // Fetch latest changes
+      await execaCommand('git fetch origin', { cwd: configDir })
 
-      // Copy config.yaml
-      const tempConfigPath = path.join(tempDir, OMNIFLOW_CONFIG_FILE)
-      const configContent = await fs.readFile(tempConfigPath, 'utf-8')
-      await fs.writeFile(path.join(configDir, OMNIFLOW_CONFIG_FILE), configContent, 'utf-8')
+      // Checkout and pull
+      await execaCommand(`git checkout ${OMNIFLOW_CONFIG_BRANCH}`, { cwd: configDir })
+      await execaCommand(`git pull origin ${OMNIFLOW_CONFIG_BRANCH}`, { cwd: configDir })
 
-      // Copy commands.js if it exists
-      const tempCommandsPath = path.join(tempDir, OMNIFLOW_COMMANDS_FILE)
-      try {
-        await fs.access(tempCommandsPath)
-        const commandsContent = await fs.readFile(tempCommandsPath, 'utf-8')
-        await fs.writeFile(path.join(configDir, OMNIFLOW_COMMANDS_FILE), commandsContent, 'utf-8')
-      } catch {
-        // commands.js doesn't exist, skip
-      }
-    } finally {
-      // Clean up temp directory
-      await fs.rm(tempDir, { recursive: true, force: true })
+      // Clear cache
+      this.config = null
+      this.initialized = false
+
+      // Reload
+      await this.load()
+
+      console.log('✅ Configuration updated\n')
+    } catch (error) {
+      throw new Error(`Failed to reload configuration: ${(error as Error).message}`)
     }
-
-    // Reload config
-    this.config = null
-    await this.load()
   }
 
   /**

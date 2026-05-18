@@ -2,7 +2,7 @@
 
 import { exec } from 'child_process'
 import { promisify } from 'util'
-import { strategyRegistry } from './strategies'
+import { strategyRegistry } from './strategies/index.js'
 
 const execAsync = promisify(exec)
 
@@ -13,7 +13,6 @@ export interface GitConfig {
   password?: string
   merge_from?: string
   strategy?: string  // Strategy name: 'github', 'gitlab', 'forgejo', etc.
-  merge_method?: 'merge' | 'squash' | 'rebase'  // Merge method
 }
 
 export interface GitResult {
@@ -46,8 +45,7 @@ export async function executeGitWorkflow(
         branch,
         config.username,
         config.password,
-        config.strategy,
-        config.merge_method
+        config.strategy
       )
       console.log(`  ✓ Merge request submitted`)
     }
@@ -116,7 +114,6 @@ export async function executeGitWorkflow(
  * @param username Git username (optional, for token)
  * @param password Git password or token
  * @param strategyName Strategy name from config (e.g., 'github', 'gitlab')
- * @param mergeMethod Merge method: 'merge', 'squash', or 'rebase'
  */
 async function createMergeRequest(
   repoUrl: string,
@@ -124,8 +121,7 @@ async function createMergeRequest(
   targetBranch: string,
   username?: string,
   password?: string,
-  strategyName?: string,
-  mergeMethod?: string
+  strategyName?: string
 ): Promise<void> {
   const repoInfo = parseGitUrl(repoUrl)
 
@@ -166,7 +162,7 @@ async function createMergeRequest(
   }
 
   try {
-    await strategy.create(repoInfo, sourceBranch, targetBranch, mergeMethod)
+    await strategy.create(repoInfo, sourceBranch, targetBranch)
   } catch (error) {
     console.log(`  ⚠️  API request failed: ${(error as Error).message}`)
   }

@@ -49,6 +49,7 @@ export interface GitProjectConfig {
   username?: string
   password?: string
   depth?: number
+  merge_strategy?: string           // MR/PR 策略: 'github', 'gitlab', 'forgejo'（可选，默认使用 GIT_MERGE_STRATEGY 环境变量）
 }
 
 // 项目定义（仅 project 类型）
@@ -63,8 +64,6 @@ export interface EnvironmentConfig {
   description?: string              // 环境描述
   branch: string                    // Git 分支名
   merge_from?: string               // 合并来源分支
-  merge_strategy?: string           // MR/PR 策略: 'github', 'gitlab', 'forgejo'
-  merge_method?: 'merge' | 'squash' | 'rebase'  // 合并方式
   vars?: Record<string, string>     // 环境变量
   commands?: CommandDefinition[]    // 可执行的命令列表
 }

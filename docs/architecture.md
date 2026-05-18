@@ -238,12 +238,13 @@ projects:
 
 示例配置：
 ```yaml
+repos:
+  git: https://git.example.com/project.git
+  merge_strategy: github      # github, gitlab, forgejo（可选）
 environments:
   - name: prod
     branch: main
     merge_from: dev
-    merge_strategy: github    # github, gitlab, forgejo
-    merge_method: merge       # merge, squash, rebase
 ```
 
 ## 使用流程

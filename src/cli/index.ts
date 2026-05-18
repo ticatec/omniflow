@@ -2,7 +2,7 @@
 // Omniflow CLI - CI/CD Pipeline Manager
 
 import { Command } from 'commander'
-import { OmniflowConfigLoader } from '../config'
+import { OmniflowConfigLoader } from '../config/index.js'
 import { runCommand } from './commands/run.js'
 
 const program = new Command()
@@ -19,12 +19,12 @@ program
   .command('run')
   .description('Run deployment for a project')
   .argument('<project>', 'Project key (e.g., omni-gate/platform)')
-  .argument('<environment>', 'Environment name (e.g., test, prod)')
-  .argument('[command]', 'Command name (optional, e.g., frontend-deploy)')
+  .argument('<commands...>', 'Commands to run (e.g., frontend-deploy backend-deploy)')
+  .requiredOption('-e, --environment <env>', 'Environment name (e.g., test, prod)')
   .option('-d, --dry-run', 'Preview mode without execution')
   .option('-v, --verbose', 'Verbose output')
-  .action(async (project, environment, command, options) => {
-    await runCommand(project, environment, command, {
+  .action(async (project, commands, options) => {
+    await runCommand(project, options.environment, commands, {
       dryRun: options.dryRun || false,
       verbose: options.verbose || false
     })

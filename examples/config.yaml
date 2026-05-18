@@ -45,13 +45,12 @@ projects:
           APP_TYPE: core
         repos:
           git: ${GIT_REPOS}/omni-gate/platform.git
+          merge_strategy: github
         environments:
           - name: test
             description: 测试环境
             branch: main-test
             merge_from: dev-main
-            merge_strategy: github
-            merge_method: merge
             commands:
               - name: frontend-deploy
                 description: 部署前端应用
@@ -61,8 +60,6 @@ projects:
             description: 生产环境
             branch: main
             merge_from: main-test
-            merge_strategy: github
-            merge_method: merge
             commands:
               - name: frontend-deploy
               - name: backend-build
@@ -153,11 +150,11 @@ projects:
         description: SupplyNexus 平台服务
         repos:
           git: ${GIT_REPOS}/supply-nexus/platform.git
+          merge_strategy: github
         environments:
           - name: release
             description: 预发布环境
             branch: main
-            merge_strategy: github
             commands:
               - name: deploy
               - name: rollback

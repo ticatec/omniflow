@@ -229,12 +229,13 @@ When `merge_from` and `merge_strategy` are configured:
 
 Example configuration:
 ```yaml
+repos:
+  git: https://git.example.com/project.git
+  merge_strategy: github      # github, gitlab, forgejo (optional)
 environments:
   - name: prod
     branch: main
     merge_from: dev
-    merge_strategy: github    # github, gitlab, forgejo
-    merge_method: merge       # merge, squash, rebase
 ```
 
 ## Usage Flow

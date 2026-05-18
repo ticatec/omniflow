@@ -75,13 +75,11 @@ export default abstract class BaseMergeRequest implements MergeRequestStrategy {
      * @param repoInfo - Repository info { platform, owner, repo, serverUrl, token }
      * @param source - Source branch name
      * @param target - Target branch name
-     * @param mergeMethod - Merge method: 'merge', 'squash', or 'rebase'
      */
     async create(
         repoInfo: any,
         source: string,
-        target: string,
-        mergeMethod: string = 'merge'
+        target: string
     ): Promise<void> {
         try {
             let mrId: string | number
@@ -99,7 +97,7 @@ export default abstract class BaseMergeRequest implements MergeRequestStrategy {
             }
 
             // Auto merge
-            await this.acceptMergeRequest(repoInfo, mrId, mergeMethod)
+            await this.acceptMergeRequest(repoInfo, mrId)
             console.log(this.formatMergedMessage(mrId))
         } catch (error) {
             console.log(`  ⚠️  API error: ${(error as Error).message}`)

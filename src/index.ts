@@ -1,3 +1,3 @@
 // Main exports
 
-export * from './types/config'
+export * from './types/config.js'

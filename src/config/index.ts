@@ -1,3 +1,3 @@
 // Config exports
 
-export { OmniflowConfigLoader } from './omniflow'
+export { OmniflowConfigLoader } from './omniflow.js'

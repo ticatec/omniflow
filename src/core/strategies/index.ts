@@ -5,9 +5,9 @@
  * across different platforms (GitHub, GitLab, Forgejo, etc.)
  */
 
-import GitHubRequest from './GitHubRequest'
-import GitLabRequest from './GitLabRequest'
-import ForgejoRequest from './ForgejoRequest'
+import GitHubRequest from './GitHubRequest.js'
+import GitLabRequest from './GitLabRequest.js'
+import ForgejoRequest from './ForgejoRequest.js'
 import type {MergeRequestStrategy} from './types.js'
 
 /**

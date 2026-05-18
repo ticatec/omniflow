@@ -181,6 +181,7 @@ projects:
         description: Platform Service
         repos:                # Required for projects
           git: ${GIT_REPOS}/my-app/platform.git
+          # merge_strategy: github   # Optional (uses GIT_MERGE_STRATEGY env var if not set)
         vars:                 # Project variables (override group)
           APP_NAME: platform
           IMAGE_PREFIX: company/platform
@@ -190,8 +191,6 @@ projects:
             description: Test Environment
             branch: main-test
             merge_from: dev-main
-            merge_strategy: github
-            merge_method: merge
             vars:              # Environment variables (override project)
               DEPLOY_HOST: test.platform.example.com
             commands:
@@ -249,21 +248,22 @@ export default async function pipeline(ctx) {
 
 ```bash
 # Deploy platform service to test environment
-omniflow run my-app/platform test
+omniflow run -e test my-app/platform frontend-deploy
+
+# Run multiple commands in one environment
+omniflow run -e test my-app/platform frontend-deploy backend-build
 
 # Deploy micro-service to production
-omniflow run my-app/micro-services prod
-
-# Execute specific command
-omniflow run my-app/platform test frontend-deploy
+omniflow run -e prod my-app/micro-services deploy
 ```
 
 ## CLI Commands
 
 ```bash
 # Run deployment (using cached config)
-omniflow run <project-path> <environment> [command]
+omniflow run -e <environment> <project-path> <command> [command...]
 # project-path supports nested paths, e.g.: my-app/platform
+# Multiple commands can be specified, executed sequentially
 
 # List all projects
 omniflow list projects
@@ -399,9 +399,12 @@ projects:
     REPLICAS: "3"
   repos:                   # Required
     git: https://...
+    merge_strategy: github  # MR/PR strategy: github, gitlab, forgejo (optional)
   environments:            # Required
     - name: test
 ```
+
+**Note:** `merge_strategy` can also be set globally via the `GIT_MERGE_STRATEGY` environment variable. If not specified in the project config, the env var value is used.
 
 ### Environment Configuration
 
@@ -411,8 +414,6 @@ environments:
     description: Test Environment
     branch: main-test       # Target branch
     merge_from: dev-main    # Source branch for merge (optional)
-    merge_strategy: github  # MR/PR strategy: github, gitlab, forgejo (optional)
-    merge_method: merge     # Merge method: merge, squash, rebase (optional)
     vars:                   # Environment variables (optional)
       API_URL: https://test.api.com
     commands:               # Available command list (optional)
@@ -467,10 +468,8 @@ Example:
 ## More Documentation
 
 - [Architecture Design](docs/architecture.md)
-- [Project Structure Examples](examples/project-structure.md)
-- [Complete Configuration Example](examples/config_omni_gate.yaml)
+- [Configuration Example](examples/config.yaml)
 - [Deployment Script Examples](examples/scripts/deploy.js)
-- [Environment Variables Configuration](.env.example)
 
 ## License
 
