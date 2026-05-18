@@ -1,0 +1,85 @@
+{
+  "name": "@ticatc/omniflow",
+  "version": "0.1.0",
+  "description": "Unified CI/CD pipeline manager with centralized scheduling - manage all projects from one config file while keeping deployment scripts in their repositories",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "omniflow": "./dist/cli/index.js"
+  },
+  "homepage": "https://github.com/ticatc/omniflow#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ticatc/omniflow.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ticatc/omniflow/issues"
+  },
+  "author": "Ticatc <info@ticatc.com>",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/cli/index.js",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
+  },
+  "keywords": [
+    "ci-cd",
+    "cicd",
+    "pipeline",
+    "devops",
+    "deployment",
+    "automation",
+    "gitops",
+    "workflow",
+    "build",
+    "release",
+    "deploy",
+    "continuous-integration",
+    "continuous-delivery",
+    "yaml",
+    "monorepo"
+  ],
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^12.1.0",
+    "enquirer": "^2.4.1",
+    "execa": "^9.5.1",
+    "fast-glob": "^3.3.2",
+    "tsx": "^4.19.2",
+    "yaml": "^2.6.0",
+    "zx": "^8.2.2"
+  },
+  "devDependencies": {
+    "@jest/globals": "^30.4.1",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.10.2",
+    "@typescript-eslint/eslint-plugin": "^8.19.1",
+    "@typescript-eslint/parser": "^8.19.1",
+    "eslint": "^9.17.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.9",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./dist/index.js",
+    "./config": "./dist/config/index.js",
+    "./core": "./dist/core/index.js",
+    "./cli": "./dist/cli/index.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

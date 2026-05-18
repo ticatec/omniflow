@@ -1,0 +1,9 @@
+/.idea/
+node_modules/
+dist/
+*.log
+.DS_Store
+*.local
+.env
+!.env.example
+/package-lock.json

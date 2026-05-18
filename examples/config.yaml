@@ -1,0 +1,206 @@
+# Omniflow 配置文件 - CI/CD 项目统一调度入口
+# 配置仓库由 OMNIFLOW_CONFIG_REPO 环境变量指定
+
+omniflow:
+  # 全局环境变量 - 传递给所有项目
+  env:
+    REGISTRY: docker.aliyun.com
+    NAMESPACE: ticatec
+    DEPLOY_USER: deploy
+    GIT_REPOS: https://git.omnicube.local
+
+  # 全局 Git 配置
+  git:
+    repos: https://git.omnicube.local
+    username: ${GIT_USERNAME}
+    password: ${GIT_PASSWORD}
+
+  # SSH 服务器配置（用于部署）
+  ssh:
+    test:
+      server: test.example.com
+      user: deploy
+      private_key_file: ~/.ssh/id_rsa
+      port: 22
+    prod:
+      server: prod.example.com
+      user: deploy
+      private_key_file: ~/.ssh/id_rsa
+      port: 22
+
+# 项目目录组织 - 支持任意深度嵌套文件夹
+projects:
+  # ============ 一级分组：应用平台 ============
+  - name: omni-gate
+    description: 应用平台
+    type: folder
+    vars:
+      PLATFORM: omni-gate
+      DEPLOY_REGION: us-east-1
+    items:
+      # 平台核心服务
+      - name: platform
+        description: 平台核心服务
+        vars:
+          APP_TYPE: core
+        repos:
+          git: ${GIT_REPOS}/omni-gate/platform.git
+        environments:
+          - name: test
+            description: 测试环境
+            branch: main-test
+            merge_from: dev-main
+            merge_strategy: github
+            merge_method: merge
+            commands:
+              - name: frontend-deploy
+                description: 部署前端应用
+              - name: backend-build
+                description: 制作docker镜像
+          - name: prod
+            description: 生产环境
+            branch: main
+            merge_from: main-test
+            merge_strategy: github
+            merge_method: merge
+            commands:
+              - name: frontend-deploy
+              - name: backend-build
+
+      # ============ 二级分组：微服务 ============
+      - name: micro-services
+        description: 微服务组
+        type: folder
+        vars:
+          APP_TYPE: micro-service
+          CPU_LIMIT: "500m"
+        items:
+          # ============ 三级分组：用户相关服务 ============
+          - name: user
+            description: 用户相关服务
+            type: folder
+            vars:
+              DOMAIN: user
+            items:
+              - name: auth
+                description: 认证服务
+                repos:
+                  git: ${GIT_REPOS}/omni-gate/micro-services/user/auth.git
+                environments:
+                  - name: test
+                    branch: main-test
+                    commands:
+                      - name: deploy
+                  - name: prod
+                    branch: main
+                    commands:
+                      - name: deploy
+
+              - name: profile
+                description: 用户资料服务
+                repos:
+                  git: ${GIT_REPOS}/omni-gate/micro-services/user/profile.git
+                environments:
+                  - name: test
+                    branch: main-test
+                  - name: prod
+                    branch: main
+
+          # ============ 三级分组：数据服务 ============
+          - name: data
+            description: 数据服务
+            type: folder
+            vars:
+              DOMAIN: data
+              DATABASE: postgres
+            items:
+              - name: webhooks
+                description: Webhooks 微服务
+                repos:
+                  git: ${GIT_REPOS}/omni-gate/micro-services/data/webhooks.git
+                environments:
+                  - name: test
+                    branch: main-test
+                    merge_from: dev-main
+                    commands:
+                      - name: deploy
+                      - name: rollback
+                  - name: prod
+                    branch: main
+                    merge_from: main-test
+                    commands:
+                      - name: deploy
+
+              - name: etl
+                description: 数据 ETL 服务
+                repos:
+                  git: ${GIT_REPOS}/omni-gate/micro-services/data/etl.git
+                environments:
+                  - name: test
+                    branch: main-test
+                  - name: prod
+                    branch: main
+
+  # ============ 一级分组：SupplyNexus ============
+  - name: supply-nexus
+    description: SupplyNexus 应用平台
+    type: folder
+    vars:
+      PLATFORM: supply-nexus
+      DEPLOY_REGION: us-west-2
+    items:
+      - name: platform
+        description: SupplyNexus 平台服务
+        repos:
+          git: ${GIT_REPOS}/supply-nexus/platform.git
+        environments:
+          - name: release
+            description: 预发布环境
+            branch: main
+            merge_strategy: github
+            commands:
+              - name: deploy
+              - name: rollback
+
+      # ============ 二级嵌套：供应链分组 ============
+      - name: supply-chain
+        description: 供应链服务
+        type: folder
+        items:
+          - name: inventory
+            description: 库存管理
+            repos:
+              git: ${GIT_REPOS}/supply-nexus/inventory.git
+            environments:
+              - name: test
+                branch: develop
+              - name: release
+                branch: main
+
+          - name: logistics
+            description: 物流管理
+            repos:
+              git: ${GIT_REPOS}/supply-nexus/logistics.git
+            environments:
+              - name: test
+                branch: develop
+              - name: release
+                branch: main
+
+# ============ 使用示例 ============
+# 部署命令示例：
+#
+# omniflow run omni-gate/platform test frontend-deploy
+# omniflow run omni-gate/micro-services/user/auth test deploy
+# omniflow run omni-gate/micro-services/data/webhooks prod deploy
+# omniflow run supply-nexus/platform release deploy
+# omniflow run supply-nexus/supply-chain/inventory test deploy
+#
+# 查看项目列表：
+# omniflow list projects
+#
+# 查看环境：
+# omniflow list environments omni-gate/micro-services/user/auth
+#
+# 变量继承顺序（后者覆盖前者）：
+# omniflow.env -> omni-gate.vars -> micro-services.vars -> user.vars -> auth.vars -> test.vars
