@@ -1,5 +1,10 @@
 # Omniflow - CI/CD Pipeline Manager
 
+[![npm version](https://badge.fury.io/js/%40ticatec%2Fomniflow.svg)](https://www.npmjs.com/package/@ticatec/omniflow)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+[English](./README.md)
+
 统一的 CI/CD 项目调度管理工具，采用**统一调度入口 + 项目自管理 pipeline**的架构。
 
 ## 核心设计

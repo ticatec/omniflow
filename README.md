@@ -1,5 +1,10 @@
 # Omniflow - CI/CD Pipeline Manager
 
+[![npm version](https://badge.fury.io/js/%40ticatec%2Fomniflow.svg)](https://www.npmjs.com/package/@ticatec/omniflow)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+[中文文档](./README_CN.md)
+
 A unified CI/CD project scheduling and management tool with **unified scheduling entry + project self-managed pipeline** architecture.
 
 ## Core Design
