@@ -26,7 +26,7 @@ describe('Git URL parsing concepts', () => {
     }
   ]
 
-  testUrls.forEach(({ url, expectedPlatform, expectedOwner, expectedRepo }) => {
+  testUrls.forEach(({ url, expectedOwner, expectedRepo }) => {
     it(`should parse ${url}`, () => {
       // Verify URL structure
       expect(url).toContain(expectedOwner)

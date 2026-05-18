@@ -8,13 +8,11 @@ import { exec } from 'child_process'
 import { promisify } from 'util'
 import type {
   OmniflowConfig,
-  OmniflowGlobal,
   ProjectDefinition,
   ProjectItem,
   EnvironmentConfig,
   GitProjectConfig,
-  ProjectNode,
-  CommandDefinition
+  ProjectNode
 } from '../types/config.js'
 
 const execAsync = promisify(exec)
@@ -139,30 +137,6 @@ export class OmniflowConfigLoader {
     const rawConfig = await this.fetchFromGit()
     this.config = this.resolveEnvVars(rawConfig)
     return this.config
-  }
-
-  /**
-   * Flatten project tree into a map by path
-   */
-  private buildProjectMap(projects: ProjectItem[], prefix: string = ''): Map<string, ProjectItem> {
-    const map = new Map<string, ProjectItem>()
-
-    for (const project of projects) {
-      const path = prefix ? `${prefix}/${project.name}` : project.name
-
-      if (project.type === 'folder') {
-        // 文件夹：递归处理子项
-        if (project.items) {
-          const childMap = this.buildProjectMap(project.items, path)
-          childMap.forEach((value, key) => map.set(key, value))
-        }
-      } else {
-        // 项目：添加到映射
-        map.set(path, project)
-      }
-    }
-
-    return map
   }
 
   /**

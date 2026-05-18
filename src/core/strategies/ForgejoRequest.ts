@@ -85,7 +85,7 @@ export default class ForgejoRequest extends BaseMergeRequest {
     protected async acceptMergeRequest(
         repoInfo: any,
         id: string | number,
-        method: string = 'merge'
+        _method: string = 'merge'
     ): Promise<void> {
         const apiUrl = this.buildApiUrl(repoInfo)
         const response = await fetch(`${apiUrl}/${id}/merge`, {
