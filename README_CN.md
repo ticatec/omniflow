@@ -27,7 +27,7 @@ OMNIFLOW_CONFIG_REPO (环境变量) → 配置仓库地址
 ## 安装
 
 ```bash
-npm install -g @ticatc/omniflow
+npm install -g @ticatec/omniflow
 ```
 
 或本地开发：

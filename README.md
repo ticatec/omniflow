@@ -27,7 +27,7 @@ Project repo/omniflow/deploy.js → Deployment script, managed by project itself
 ## Installation
 
 ```bash
-npm install -g @ticatc/omniflow
+npm install -g @ticatec/omniflow
 ```
 
 Or for local development:
