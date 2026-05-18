@@ -1,13 +1,12 @@
 # Source files
 src/
 *.ts
-!*.d.ts
-tsconfig.json
 
 # Tests
 __tests__/
-*.test.js
-*.test.ts
+**/__tests__/
+**/*.test.js
+**/*.test.d.ts
 jest.config.js
 
 # Development files
@@ -23,5 +22,6 @@ examples/
 # Dependencies
 node_modules/
 
-# Build artifacts (keep dist/)
-*.map
+# Build artifacts
+tsconfig.json
+**/*.map
