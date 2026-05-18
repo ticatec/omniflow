@@ -1,5 +1,5 @@
 {
-  "name": "@ticatc/omniflow",
+  "name": "@ticatec/omniflow",
   "version": "0.1.0",
   "description": "Unified CI/CD pipeline manager with centralized scheduling - manage all projects from one config file while keeping deployment scripts in their repositories",
   "type": "module",
@@ -7,13 +7,13 @@
   "bin": {
     "omniflow": "./dist/cli/index.js"
   },
-  "homepage": "https://github.com/ticatc/omniflow#readme",
+  "homepage": "https://github.com/ticatec/omniflow#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ticatc/omniflow.git"
+    "url": "https://github.com/ticatec/omniflow.git"
   },
   "bugs": {
-    "url": "https://github.com/ticatc/omniflow/issues"
+    "url": "https://github.com/ticatec/omniflow/issues"
   },
   "author": "Henry Feng <huili.f@gmail.com>",
   "license": "MIT",
