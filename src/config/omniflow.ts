@@ -379,8 +379,18 @@ export class OmniflowConfigLoader {
    */
   async reload(): Promise<void> {
     const {
-      OMNIFLOW_CONFIG_BRANCH = 'main'
+      OMNIFLOW_CONFIG_REPO,
+      OMNIFLOW_CONFIG_BRANCH = 'main',
+      GIT_USERNAME,
+      GIT_PASSWORD,
+      GIT_TOKEN
     } = process.env
+
+    if (!OMNIFLOW_CONFIG_REPO) {
+      throw new Error(
+        '\n❌ Configuration error: OMNIFLOW_CONFIG_REPO environment variable is not set\n'
+      )
+    }
 
     const OMNIFLOW_HOME = process.env.OMNIFLOW_HOME || path.join(os.homedir(), '.omniflow')
     const configDir = path.join(OMNIFLOW_HOME, 'config')
@@ -390,12 +400,40 @@ export class OmniflowConfigLoader {
     try {
       const { execaCommand } = await import('execa')
 
-      // Fetch latest changes
-      await execaCommand('git fetch origin', { cwd: configDir })
+      // Check if config directory exists
+      const configExists = await fs.access(configDir).then(() => true).catch(() => false)
 
-      // Checkout and pull
-      await execaCommand(`git checkout ${OMNIFLOW_CONFIG_BRANCH}`, { cwd: configDir })
-      await execaCommand(`git pull origin ${OMNIFLOW_CONFIG_BRANCH}`, { cwd: configDir })
+      if (!configExists) {
+        // Directory doesn't exist, clone the repository
+        console.log(`   Config directory not found, cloning...`)
+
+        // Build authenticated URL
+        let repoUrl = OMNIFLOW_CONFIG_REPO
+        const password = GIT_TOKEN || GIT_PASSWORD
+        if (GIT_USERNAME && password) {
+          try {
+            const urlObj = new URL(OMNIFLOW_CONFIG_REPO)
+            urlObj.username = GIT_USERNAME
+            urlObj.password = password
+            repoUrl = urlObj.toString()
+          } catch {
+            // Invalid URL, use as-is
+          }
+        }
+
+        // Create parent directory if needed
+        await fs.mkdir(OMNIFLOW_HOME, { recursive: true })
+
+        // Clone the config repository
+        await execaCommand(`git clone --depth 1 --branch ${OMNIFLOW_CONFIG_BRANCH} --single-branch ${repoUrl} ${configDir}`, {
+          env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
+        })
+      } else {
+        // Directory exists, fetch latest changes
+        await execaCommand('git fetch origin', { cwd: configDir })
+        await execaCommand(`git checkout ${OMNIFLOW_CONFIG_BRANCH}`, { cwd: configDir })
+        await execaCommand(`git pull origin ${OMNIFLOW_CONFIG_BRANCH}`, { cwd: configDir })
+      }
 
       // Clear cache
       this.config = null
