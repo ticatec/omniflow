@@ -15,9 +15,11 @@
   "bugs": {
     "url": "https://github.com/ticatc/omniflow/issues"
   },
-  "author": "Ticatc <info@ticatc.com>",
+  "author": "Henry Feng <huili.f@gmail.com>",
   "license": "MIT",
   "scripts": {
+    "clean": "rm -rf dist",
+    "prebuild": "npm run clean",
     "build": "tsc",
     "dev": "tsc --watch",
     "start": "node dist/cli/index.js",
@@ -25,7 +27,8 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "publish:npm": "npm publish --access public"
   },
   "keywords": [
     "ci-cd",
