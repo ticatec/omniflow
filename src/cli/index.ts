@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Omniflow CLI - CI/CD Pipeline Manager
 
 import { Command } from 'commander'
