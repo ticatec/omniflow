@@ -100,9 +100,10 @@ Omniflow 使用 `OMNIFLOW_HOME` 作为工作目录（默认 `~/.omniflow`）：
 ├── config/
 │   ├── config.yaml      # 统一调度配置（从 git 获取）
 │   └── commands.js      # 公共命令库（从 git 获取，可选）
-└── data/                # 项目根目录
+└── project/             # 项目工作区
     └── <project-key>/   # 项目路径与 config.yaml 结构对应
-        └── <cloned-repo>/  # 从项目 git 仓库克隆
+        └── <environment>/  # 环境隔离的工作目录
+            └── <cloned-repo>/  # 从项目 git 仓库克隆
 ```
 
 示例：
@@ -111,15 +112,20 @@ Omniflow 使用 `OMNIFLOW_HOME` 作为工作目录（默认 `~/.omniflow`）：
 ├── config/
 │   ├── config.yaml      # 从 OMNIFLOW_CONFIG_REPO 获取
 │   └── commands.js      # 从 OMNIFLOW_CONFIG_REPO 获取
-└── data/
-    ├── my-app/platform/         # 平台项目
-    └── my-app/micro-services/   # 微服务分组
+└── project/
+    ├── my-app/platform/
+    │   ├── test/        # 测试环境工作区
+    │   └── prod/        # 生产环境工作区
+    └── my-app/micro-services/
         └── user/
-            └── auth/            # 认证服务项目
+            └── auth/
+                ├── test/
+                └── prod/
 ```
 
 **项目路径映射规则：**
-- config.yaml 中的 `projects` 结构直接映射到 `data/` 目录
+- config.yaml 中的 `projects` 结构直接映射到 `project/` 目录
+- 每个环境有独立的工作目录，互不干扰
 - `folder` 类型项创建目录
 - `project` 类型项从其 git 地址克隆代码到对应路径
 
@@ -131,6 +137,80 @@ Omniflow 使用 `OMNIFLOW_HOME` 作为工作目录（默认 `~/.omniflow`）：
 config.git/
 ├── config.yaml       # 必需：统一调度配置
 └── commands.js       # 可选：公共命令库
+```
+
+### 3. 创建公共命令库（可选）
+
+在配置仓库中创建 `commands.js`，定义可被所有项目使用的公共命令：
+
+```javascript
+/**
+ * Omniflow 公共命令库
+ * 位置：配置仓库根目录 (与 config.yaml 同级)
+ */
+
+import { $ } from 'zx'
+
+/**
+ * SSH 远程执行命令
+ */
+export async function sshExec({ host, user, command, env = {}, port = 22 }) {
+  const envStr = Object.entries(env)
+    .map(([k, v]) => `export ${k}="${v}"`)
+    .join(' ')
+
+  const fullCommand = envStr ? `${envStr}; ${command}` : command
+  const sshCmd = `ssh -o StrictHostKeyChecking=no -p ${port} ${user}@${host} "${fullCommand.replace(/"/g, '\\"')}"`
+
+  try {
+    const result = await $`sh -c ${sshCmd}`
+    return { success: true, stdout: result.stdout, stderr: result.stderr }
+  } catch (error) {
+    return { success: false, stdout: error.stdout || '', stderr: error.stderr || '', error: error.message }
+  }
+}
+
+/**
+ * 远程部署
+ */
+export async function remoteDeploy({ host, user, remotePath, commands, env = {} }) {
+  const cmdStr = Array.isArray(commands) ? commands.join(' && ') : commands
+  const fullCommand = `cd ${remotePath} && ${cmdStr}`
+  return await sshExec({ host, user, command: fullCommand.trim(), env })
+}
+
+/**
+ * 工具函数集合
+ */
+export const utils = {
+  formatDate: (date = new Date()) => date.toISOString(),
+  buildVersion: (prefix = 'v') => `${prefix}${Date.now()}`,
+  uuid: () => Math.random().toString(36).substring(2, 15),
+  sleep: (ms) => new Promise(resolve => setTimeout(resolve, ms))
+}
+
+// 默认导出 - 包含所有命令
+export default {
+  sshExec,
+  remoteDeploy,
+  utils
+}
+```
+
+**加载机制：**
+- commands.js 在 CLI 统一加载（`OmniflowConfigLoader.loadCommands()`）
+- 作为 `ctx.commands` 传递给子命令脚本
+- 支持命名导出和默认导出
+
+**使用方式：**
+```javascript
+// 在项目部署脚本中使用
+export default async function pipeline(ctx) {
+  await ctx.commands.sshExec({ host: '192.168.1.5', user: 'deploy', command: 'npm run build' })
+  await ctx.commands.remoteDeploy({ host: 'test.server', user: 'deploy', remotePath: '/opt/app', commands: ['pm2 restart app'] })
+  
+  const version = ctx.commands.utils.buildVersion()
+}
 ```
 
 ### 4. 编辑配置文件
@@ -230,7 +310,7 @@ projects:
                 description: 部署webhooks微服务
 ```
 
-### 3. 创建部署脚本
+### 5. 创建部署脚本
 
 在项目仓库创建 `omniflow/deploy.js`:
 
@@ -254,7 +334,7 @@ export default async function pipeline(ctx) {
 }
 ```
 
-### 4. 执行部署
+### 6. 执行部署
 
 ```bash
 # 部署平台服务的测试环境
@@ -300,26 +380,41 @@ omniflow reload
 
 ```javascript
 export default async function pipeline(ctx) {
-  // Actions
-  ctx.actions.git.clone({ url, branch, path })
-  ctx.actions.shell.script({ script: '...' })
-  ctx.actions.log.info('message')
-
-  // 变量
-  ctx.env          // 合并后的环境变量
-  ctx.globals      // config.yaml 中项目定义的 vars
-  ctx.secrets      // 密钥
-  ctx.system       // 系统变量 (VERSION, WORKSPACE, etc.)
+  // 工作区信息
+  ctx.workspace       // 工作区路径
+  ctx.projectRoot     // 项目根目录
 
   // 项目信息
-  ctx.project.path     // 'my-app/platform'
-  ctx.project.name     // '平台服务'
-  ctx.environment.name // 'test'
-  ctx.environment.description // '测试环境'
-  ctx.git.branch       // 'main-test'
-  ctx.git.mergeFrom    // 'dev-main'
-  ctx.git.commit       // commit hash
-  ctx.command.name     // 'frontend-deploy' (如果指定了命令)
+  ctx.project.key     // 'my-app/platform'
+  ctx.project.name    // '平台服务'
+  ctx.project.description  // 项目描述
+
+  // 环境信息
+  ctx.environment.name      // 'test'
+  ctx.environment.config    // 环境配置对象
+
+  // 命令信息
+  ctx.command.name         // 'frontend-deploy'
+  ctx.command.description  // '部署前端应用'
+
+  // Git 信息
+  ctx.git.url      // 项目 git 仓库地址
+  ctx.git.branch   // 当前分支
+  ctx.git.commit   // 当前 commit hash
+
+  // 环境变量
+  ctx.env          // 合并后的环境变量 (global -> folder -> project -> environment)
+
+  // Omniflow 配置
+  ctx.omniflow     // config.yaml 中的 omniflow 配置
+
+  // 公共命令库
+  ctx.commands     // commands.js 导出的命令对象
+  ctx.commands.sshExec({ ... })
+  ctx.commands.utils.formatDate()
+
+  // 选项
+  ctx.verbose      // 是否启用详细输出
 }
 ```
 
@@ -453,10 +548,9 @@ omniflow:
 ## 更多文档
 
 - [架构设计](docs/architecture.md)
-- [项目结构示例](examples/project-structure.md)
-- [完整配置示例](examples/config_omni_gate.yaml)
+- [完整配置示例](examples/config.yaml)
 - [部署脚本示例](examples/scripts/deploy.js)
-- [环境变量配置](.env.example)
+- [公共命令库示例](examples/commands.js)
 
 ## License
 

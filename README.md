@@ -102,11 +102,11 @@ Omniflow uses `OMNIFLOW_HOME` as the working directory (defaults to `~/.omniflow
 ├── config/
 │   ├── config.yaml      # Unified scheduling config (from git)
 │   └── commands.js      # Shared commands library (from git, optional)
-└── data/                # Projects root
+└── project/             # Projects workspace
     └── <project-key>/   # Project path matches config.yaml structure
-        └── <cloned-repo>/  # Cloned from project git repository
+        └── <environment>/  # Environment-isolated workspace
+            └── <cloned-repo>/  # Cloned from project git repository
 ```
-
 
 Example:
 ```
@@ -114,19 +114,98 @@ Example:
 ├── config/
 │   ├── config.yaml      # Fetched from OMNIFLOW_CONFIG_REPO
 │   └── commands.js      # Fetched from OMNIFLOW_CONFIG_REPO
-└── data/
-    ├── my-app/platform/         # Platform project
-    └── my-app/micro-services/   # Micro-services group
+└── project/
+    ├── my-app/platform/
+    │   ├── test/        # Test environment workspace
+    │   └── prod/        # Production environment workspace
+    └── my-app/micro-services/
         └── user/
-            └── auth/            # Auth service project
+            └── auth/
+                ├── test/
+                └── prod/
 ```
 
 **Project path mapping rules:**
-- The `projects` structure in config.yaml directly maps to the `data/` directory
+- The `projects` structure in config.yaml directly maps to the `project/` directory
+- Each environment has an isolated workspace directory
 - `folder` type items create directories
 - `project` type items clone code from their git repository to the corresponding path
 
-### 3. Create Configuration Repository
+### 3. Create Shared Commands Library (Optional)
+
+Create `commands.js` in the configuration repository to define common commands that can be used by all projects:
+
+```javascript
+/**
+ * Omniflow Shared Commands Library
+ * Location: Configuration repository root (same level as config.yaml)
+ */
+
+import { $ } from 'zx'
+
+/**
+ * SSH Remote Command Execution
+ */
+export async function sshExec({ host, user, command, env = {}, port = 22 }) {
+  const envStr = Object.entries(env)
+    .map(([k, v]) => `export ${k}="${v}"`)
+    .join(' ')
+
+  const fullCommand = envStr ? `${envStr}; ${command}` : command
+  const sshCmd = `ssh -o StrictHostKeyChecking=no -p ${port} ${user}@${host} "${fullCommand.replace(/"/g, '\\"')}"`
+
+  try {
+    const result = await $`sh -c ${sshCmd}`
+    return { success: true, stdout: result.stdout, stderr: result.stderr }
+  } catch (error) {
+    return { success: false, stdout: error.stdout || '', stderr: error.stderr || '', error: error.message }
+  }
+}
+
+/**
+ * Remote Deployment
+ */
+export async function remoteDeploy({ host, user, remotePath, commands, env = {} }) {
+  const cmdStr = Array.isArray(commands) ? commands.join(' && ') : commands
+  const fullCommand = `cd ${remotePath} && ${cmdStr}`
+  return await sshExec({ host, user, command: fullCommand.trim(), env })
+}
+
+/**
+ * Utility Functions
+ */
+export const utils = {
+  formatDate: (date = new Date()) => date.toISOString(),
+  buildVersion: (prefix = 'v') => `${prefix}${Date.now()}`,
+  uuid: () => Math.random().toString(36).substring(2, 15),
+  sleep: (ms) => new Promise(resolve => setTimeout(resolve, ms))
+}
+
+// Default export - includes all commands
+export default {
+  sshExec,
+  remoteDeploy,
+  utils
+}
+```
+
+**Loading Mechanism:**
+- commands.js is loaded centrally by the CLI (`OmniflowConfigLoader.loadCommands()`)
+- Passed to sub-command scripts as `ctx.commands`
+- Supports both named and default exports
+
+**Usage:**
+```javascript
+// Use in project deployment scripts
+export default async function pipeline(ctx) {
+  await ctx.commands.sshExec({ host: '192.168.1.5', user: 'deploy', command: 'npm run build' })
+  await ctx.commands.remoteDeploy({ host: 'test.server', user: 'deploy', remotePath: '/opt/app', commands: ['pm2 restart app'] })
+
+  const version = ctx.commands.utils.buildVersion()
+}
+```
+
+### 4. Create Configuration Repository
 
 The configuration repository should contain:
 
@@ -136,7 +215,7 @@ config.git/
 └── commands.js       # Optional: Shared commands library
 ```
 
-### 4. Edit Configuration File
+### 5. Edit Configuration File
 
 Edit `config.yaml` in the configuration repository to add projects:
 
@@ -220,7 +299,7 @@ projects:
             branch: main
 ```
 
-### 3. Create Deployment Script
+### 6. Create Deployment Script
 
 Create `omniflow/deploy.js` in the project repository:
 
@@ -244,7 +323,7 @@ export default async function pipeline(ctx) {
 }
 ```
 
-### 4. Execute Deployment
+### 7. Execute Deployment
 
 ```bash
 # Deploy platform service to test environment
@@ -290,25 +369,41 @@ Objects available in deployment scripts:
 
 ```javascript
 export default async function pipeline(ctx) {
-  // Actions
-  ctx.actions.git.clone({ url, branch, path })
-  ctx.actions.shell.script({ script: '...' })
-  ctx.actions.log.info('message')
+  // Workspace Info
+  ctx.workspace       // Workspace path
+  ctx.projectRoot     // Project root directory
 
-  // Variables
-  ctx.env          // Merged environment variables
-  ctx.globals      // Vars defined in project config
-  ctx.system       // System variables (VERSION, WORKSPACE, etc.)
-
-  // Project info
+  // Project Info
   ctx.project.key        // 'my-app/platform'
   ctx.project.name       // 'Platform Service'
-  ctx.environment.name   // 'test'
-  ctx.environment.description // 'Test Environment'
-  ctx.git.branch         // 'main-test'
-  ctx.git.mergeFrom      // 'dev-main'
-  ctx.git.commit         // commit hash
-  ctx.command.name       // 'frontend-deploy' (if command specified)
+  ctx.project.description // Project description
+
+  // Environment Info
+  ctx.environment.name      // 'test'
+  ctx.environment.config    // Environment configuration object
+
+  // Command Info
+  ctx.command.name         // 'frontend-deploy'
+  ctx.command.description  // 'Deploy frontend application'
+
+  // Git Info
+  ctx.git.url      // Project git repository URL
+  ctx.git.branch   // Current branch
+  ctx.git.commit   // Current commit hash
+
+  // Environment Variables
+  ctx.env          // Merged environment variables (global -> folder -> project -> environment)
+
+  // Omniflow Configuration
+  ctx.omniflow     // omniflow section from config.yaml
+
+  // Shared Commands Library
+  ctx.commands     // Commands object exported from commands.js
+  ctx.commands.sshExec({ ... })
+  ctx.commands.utils.formatDate()
+
+  // Options
+  ctx.verbose      // Whether verbose output is enabled
 }
 ```
 
@@ -446,9 +541,10 @@ omniflow:
 ├── config/
 │   ├── config.yaml      # From OMNIFLOW_CONFIG_REPO
 │   └── commands.js      # From OMNIFLOW_CONFIG_REPO (optional)
-└── data/
+└── project/
     └── <project-key>/   # Path matches config.yaml projects structure
-        └── <cloned-repo>/
+        └── <environment>/  # Environment-isolated workspace
+            └── <cloned-repo>/
 ```
 
 Example:
@@ -457,19 +553,26 @@ Example:
 ├── config/
 │   ├── config.yaml
 │   └── commands.js
-└── data/
-    ├── my-app/platform/         # Cloned from my-app/platform.git
+└── project/
+    ├── my-app/platform/
+    │   ├── test/        # Cloned from my-app/platform.git (test environment)
+    │   └── prod/        # Cloned from my-app/platform.git (prod environment)
     ├── my-app/micro-services/
     │   └── user/
-    │       └── auth/            # Cloned from my-app/user/auth.git
-    └── supply-nexus/platform/   # Cloned from supply-nexus/platform.git
+    │       └── auth/
+    │           ├── test/
+    │           └── prod/
+    └── supply-nexus/platform/
+        ├── test/
+        └── prod/
 ```
 
 ## More Documentation
 
 - [Architecture Design](docs/architecture.md)
 - [Configuration Example](examples/config.yaml)
-- [Deployment Script Examples](examples/scripts/deploy.js)
+- [Deployment Script Example](examples/scripts/deploy.js)
+- [Shared Commands Library Example](examples/commands.js)
 
 ## License
 
