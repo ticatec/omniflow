@@ -23,7 +23,7 @@ export default abstract class BaseMergeRequest implements MergeRequestStrategy {
         repoInfo: any,
         source: string,
         target: string
-    ): Promise<{ exists: boolean; id?: string | number }>
+    ): Promise<{ exists: boolean; id?: string | number; prInfo?: any }>
 
     /**
      * Create a new pull/merge request
@@ -83,24 +83,74 @@ export default abstract class BaseMergeRequest implements MergeRequestStrategy {
     ): Promise<void> {
         try {
             let mrId: string | number
+            let isPrNewlyCreated = false
 
             // Check if already exists
             const checkResult = await this.checkExists(repoInfo, source, target)
             if (checkResult.exists && checkResult.id) {
                 mrId = checkResult.id
                 console.log(this.formatExistsMessage(mrId))
+
+                // Check if already merged
+                if (checkResult.prInfo?.merged) {
+                    console.log(`  ℹ️  PR/MR already merged, skipping`)
+                    return
+                }
             } else {
                 // Create new
                 const result = await this.createRequest(repoInfo, source, target)
                 mrId = result.id
                 console.log(this.formatSuccessMessage(mrId))
+                isPrNewlyCreated = true
             }
 
-            // Auto merge
-            await this.acceptMergeRequest(repoInfo, mrId)
-            console.log(this.formatMergedMessage(mrId))
+            // If PR was just created, wait a bit before attempting merge
+            // This gives Forgejo/Gitea time to process the PR
+            if (isPrNewlyCreated) {
+                console.log(`  ⏳ Waiting 3 seconds for PR to be processed...`)
+                await this.sleep(3000)
+            }
+
+            // Try to merge with retries
+            let merged = false
+            const maxRetries = 3
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    console.log(`  🔍 Debug: merge attempt ${attempt}/${maxRetries}`)
+                    await this.acceptMergeRequest(repoInfo, mrId)
+                    console.log(this.formatMergedMessage(mrId))
+                    merged = true
+                    break
+                } catch (error) {
+                    const err = error as Error
+                    console.log(`  ⚠️  Merge attempt ${attempt} failed: ${err.message}`)
+
+                    if (attempt < maxRetries) {
+                        const waitTime = attempt * 2000  // 2s, 4s, 6s
+                        console.log(`  ⏳ Waiting ${waitTime / 1000}s before retry...`)
+                        await this.sleep(waitTime)
+                    } else {
+                        throw error
+                    }
+                }
+            }
+
+            if (!merged) {
+                console.log(`  ⚠️  Could not auto-merge PR/MR ${mrId} after ${maxRetries} attempts`)
+            }
         } catch (error) {
-            console.log(`  ⚠️  API error: ${(error as Error).message}`)
+            const err = error as Error
+            console.log(`  ⚠️  API error: ${err.message}`)
+            if (err.stack) {
+                console.log(`  🔍 Debug: error stack = ${err.stack.split('\n').slice(0, 3).join('\n')}`)
+            }
         }
+    }
+
+    /**
+     * Sleep helper
+     */
+    protected sleep(ms: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, ms))
     }
 }

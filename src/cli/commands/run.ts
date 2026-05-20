@@ -1,18 +1,15 @@
 // Omniflow run command
 
 import path from 'path'
-import os from 'os'
 import { $ } from 'zx'
-import { OmniflowConfigLoader } from '../../config/index.js'
+import { OmniflowConfigLoader, settingsManager } from '../../config/index.js'
 import { executeGitWorkflow } from '../../core/git.js'
+import { createUtils } from '../utils/index.js'
 
 interface RunOptions {
   dryRun: boolean
   verbose: boolean
 }
-
-// Omniflow 工作目录
-const OMNIFLOW_HOME = process.env.OMNIFLOW_HOME || path.join(os.homedir(), '.omniflow')
 
 export async function runCommand(
   projectKey: string,
@@ -21,6 +18,9 @@ export async function runCommand(
   options: RunOptions
 ): Promise<void> {
   const loader = new OmniflowConfigLoader()
+
+  // Get OMNIFLOW_HOME from settings or environment
+  const OMNIFLOW_HOME = await settingsManager.getOmniflowHome()
 
   // Load configuration
   const config = await loader.load()
@@ -49,11 +49,11 @@ export async function runCommand(
 
   // If no commands specified, show available commands
   if (commands.length === 0) {
-    console.log(`\n📋 Available commands for ${projectKey}/${envName}:\n`)
-    if (!envConfig.commands || envConfig.commands.length === 0) {
+    console.log(`\n📋 Available commands for ${projectKey}:\n`)
+    if (!project.commands || project.commands.length === 0) {
       console.log(`  No commands defined`)
     } else {
-      for (const cmd of envConfig.commands) {
+      for (const cmd of project.commands) {
         console.log(`  ${cmd.name}${cmd.description ? ' - ' + cmd.description : ''}`)
       }
     }
@@ -62,14 +62,14 @@ export async function runCommand(
   }
 
   // Validate all commands exist before running
-  const commandDefs: Array<{ name: string; description?: string }> = []
+  const commandDefs: Array<{ name: string; description?: string; script?: string }> = []
   for (const cmdName of commands) {
-    const def = envConfig.commands?.find(c => c.name === cmdName)
+    const def = project.commands?.find((c: any) => c.name === cmdName)
     if (!def) {
       console.error(`❌ Command not found: ${cmdName}`)
-      if (envConfig.commands && envConfig.commands.length > 0) {
+      if (project.commands && project.commands.length > 0) {
         console.log(`\nAvailable commands:`)
-        for (const cmd of envConfig.commands) {
+        for (const cmd of project.commands) {
           console.log(`  - ${cmd.name}${cmd.description ? ' - ' + cmd.description : ''}`)
         }
       }
@@ -85,8 +85,9 @@ export async function runCommand(
     process.exit(1)
   }
 
-  // Workspace path: $OMNIFLOW_HOME/project/<project-path>/<environment>/
-  const workspacePath = path.join(OMNIFLOW_HOME, 'project', ...projectKey.split('/'), envName)
+  // Workspace path: $OMNIFLOW_HOME/project/<project-path>/
+  // All environments share the same workspace, just different branches
+  const workspacePath = path.join(OMNIFLOW_HOME, 'project', ...projectKey.split('/'))
   const projectRoot = workspacePath
 
   console.log(`\n🚀 Running: ${project.name || projectKey}`)
@@ -94,8 +95,8 @@ export async function runCommand(
   console.log(`   Environment: ${envName}`)
   console.log(`   Commands: ${commands.join(', ')}`)
   console.log(`   Branch: ${gitConfig.branch}`)
-  if (envConfig.merge_from) {
-    console.log(`   (Remote merge: ${envConfig.merge_from} → ${gitConfig.branch})`)
+  if (gitConfig.merge_from) {
+    console.log(`   (Remote merge: ${gitConfig.merge_from} → ${gitConfig.branch})`)
   }
   console.log(`   Workspace: ${workspacePath}`)
   console.log('')
@@ -137,6 +138,10 @@ export async function runCommand(
 
     // Load shared commands from config repository
     const sharedCommands = await loader.loadCommands() || {}
+
+    // Debug: log what loadCommands returned
+    console.log(`\n📜 Debug: loadCommands returned:`, sharedCommands)
+    console.log(`  Keys: ${sharedCommands ? Object.keys(sharedCommands).join(', ') : 'null'}`)
 
     // Execute commands sequentially
     for (let i = 0; i < commands.length; i++) {
@@ -186,17 +191,46 @@ export async function runCommand(
           commandSuccess = true
         } else {
           // Execute the command script
-          // Command script path: ./modules/<command-name> or <custom-path>
-          const scriptPath = commandDef.name.startsWith('./')
-            ? commandDef.name
-            : `./modules/${commandDef.name}`
+          // Script path resolution:
+          // 1. Use script field if provided
+          // 2. Use name if it starts with './'
+          // 3. Default to ./modules/<command-name>
+          const scriptPath = commandDef.script
+            ? commandDef.script
+            : commandDef.name.startsWith('./')
+              ? commandDef.name
+              : `./modules/${commandDef.name}`
 
-          const resolvedScriptPath = path.resolve(process.cwd(), scriptPath)
+          const resolvedScriptPath = path.resolve(projectRoot, scriptPath)
 
           // Import and run the script
           const scriptModule = await import(resolvedScriptPath)
 
           if (typeof scriptModule.default === 'function') {
+            // Build actions object - for executing operations
+            const actions = {
+              log: {
+                info: (msg: string) => console.log(`  ℹ️  ${msg}`),
+                success: (msg: string) => console.log(`  ✅ ${msg}`),
+                error: (msg: string) => console.error(`  ❌ ${msg}`),
+                warn: (msg: string) => console.log(`  ⚠️  ${msg}`)
+              },
+              shell: {
+                exec: async (cmd: string) => {
+                  const result = await $`${cmd}`
+                  return { stdout: result.stdout, stderr: result.stderr }
+                }
+              },
+              git: {
+                clone: async (opts: { url: string; branch: string; path: string }) => {
+                  await $`git clone --depth 1 --branch ${opts.branch} ${opts.url} ${opts.path}`
+                }
+              }
+            }
+
+            // Create utils object from utils module
+            const utils = createUtils()
+
             const context = {
               workspace: workspacePath,
               projectRoot: projectRoot,
@@ -219,9 +253,25 @@ export async function runCommand(
                 commit: gitResult.commit || ''
               },
               env: scriptEnv,
+              // Add system alias for backward compatibility
+              system: {
+                WORKSPACE: workspacePath,
+                WORKPLACE: projectRoot,
+                PROJECT_NAME: project.name || projectKey,
+                PACKAGE_VERSION: gitResult.commit?.substring(0, 8) || 'unknown'
+              },
               omniflow: config.omniflow,
               commands: sharedCommands,
+              actions: actions,
+              utils: utils,
               verbose: options.verbose
+            }
+
+            // Debug: log sharedCommands
+            if (options.verbose) {
+              console.log(`\n📜 sharedCommands:`, JSON.stringify(sharedCommands, null, 2))
+            } else {
+              console.log(`\n📜 sharedCommands keys: ${sharedCommands ? Object.keys(sharedCommands).join(', ') : 'null'}`)
             }
 
             await scriptModule.default(context)

@@ -27,7 +27,7 @@ export default class GitHubRequest extends BaseMergeRequest {
     repoInfo: any,
     source: string,
     target: string
-  ): Promise<{ exists: boolean; id?: string | number }> {
+  ): Promise<{ exists: boolean; id?: string | number; prInfo?: any }> {
     const apiUrl = this.buildApiUrl(repoInfo)
     const response = await fetch(
       `${apiUrl}?head=${repoInfo.owner}:${source}&base=${target}&state=open`,
@@ -42,7 +42,7 @@ export default class GitHubRequest extends BaseMergeRequest {
     if (response.ok) {
       const prs = await response.json() as any[]
       if (prs.length > 0) {
-        return { exists: true, id: prs[0].number }
+        return { exists: true, id: prs[0].number, prInfo: prs[0] }
       }
     }
     return { exists: false }

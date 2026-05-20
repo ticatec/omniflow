@@ -37,6 +37,7 @@ export interface ProjectItem {
   // Project 类型属性
   repos?: GitProjectConfig        // 项目的仓库配置（仅 project）
   environments?: EnvironmentConfig[]  // 环境配置（仅 project）
+  commands?: CommandDefinition[]  // 可执行的命令列表（仅 project，所有环境共享）
 
   // 通用属性（folder 和 project 都可以定义）
   vars?: Record<string, string>   // 变量（folder 的变量会被子项继承）
@@ -58,20 +59,20 @@ export type ProjectDefinition = Omit<ProjectItem, 'items'> & {
   environments?: EnvironmentConfig[]
 }
 
-// 环境配置（包含命令定义）
+// 环境配置
 export interface EnvironmentConfig {
   name: string                      // 环境名称，如 test、prod
   description?: string              // 环境描述
   branch: string                    // Git 分支名
   merge_from?: string               // 合并来源分支
   vars?: Record<string, string>     // 环境变量
-  commands?: CommandDefinition[]    // 可执行的命令列表
 }
 
 // 命令定义
 export interface CommandDefinition {
   name: string                      // 命令名称（如 frontend-deploy）
   description?: string              // 命令描述
+  script?: string                   // 脚本文件路径（相对于项目根目录，如 ./modules/frontend-deploy.js）
 }
 
 // 项目树节点（用于遍历）

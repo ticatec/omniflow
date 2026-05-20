@@ -43,6 +43,12 @@ npm run build
 npm link
 ```
 
+**注意：** 如果使用 `npm run start` 运行命令，需要使用 `--` 分隔参数，避免 npm 将 `-e` 解析为 `--enjoy-by`：
+
+```bash
+npm run start -- run -e test omni-gate/platform command-name
+```
+
 ## 快速开始
 
 ### 1. 配置环境变量
@@ -262,6 +268,13 @@ projects:
           APP_NAME: platform
           IMAGE_PREFIX: company/platform
           DEPLOY_HOST: platform.example.com
+        commands:             # 可执行的命令列表（所有环境共享）
+          - name: frontend-deploy
+            description: 部署前端应用
+            script: ./omniflow/frontend-deploy.js
+          - name: backend-build
+            description: 制作docker镜像
+            script: ./omniflow/backend-build.js
         environments:          # 项目必需
           - name: test
             description: 测试环境
@@ -269,18 +282,10 @@ projects:
             merge_from: dev-main
             vars:              # 环境变量（覆盖项目）
               DEPLOY_HOST: test.platform.example.com
-            commands:
-              - name: frontend-deploy
-                description: 部署前端应用
-              - name: backend-build
-                description: 制作docker镜像
           - name: prod
             description: 生产环境
             branch: main
             merge_from: main-test
-            commands:
-              - name: frontend-deploy
-              - name: backend-build
 
       # 项目：用户服务
       - name: user-service
@@ -361,8 +366,8 @@ omniflow list projects
 # 列出项目的环境
 omniflow list environments <project-path>
 
-# 列出环境的可用命令
-omniflow list commands <project-path> <environment>
+# 列出项目的可用命令（命令定义在项目级别，所有环境共享）
+omniflow list commands <project-path>
 
 # 查看项目详情
 omniflow show <project-path> [environment]
@@ -370,8 +375,8 @@ omniflow show <project-path> [environment]
 # 清理工作区
 omniflow clean [project-path]
 
-# 重新加载配置（从 git 获取最新配置并更新 config/）
-omniflow reload
+# 更新配置（从 git 获取最新配置）
+omniflow update
 ```
 
 ## 脚本上下文
@@ -408,14 +413,105 @@ export default async function pipeline(ctx) {
   // Omniflow 配置
   ctx.omniflow     // config.yaml 中的 omniflow 配置
 
-  // 公共命令库
+  // 系统操作 (actions)
+  ctx.actions.log.info(msg)       // 输出信息
+  ctx.actions.log.success(msg)    // 输出成功信息
+  ctx.actions.log.error(msg)      // 输出错误信息
+  ctx.actions.shell.exec(cmd)     // 执行 shell 命令
+  ctx.actions.git.clone(opts)     // 克隆 git 仓库
+
+  // 工具函数 (utils)
+  ctx.utils.getPackageVersion({ workspace, subdir })  // 获取 package.json 版本
+  ctx.utils.templateReplace({ sourceFile, targetFile, variables })  // 替换模板变量
+
+  // 公共命令库 (从 commands.js 加载)
   ctx.commands     // commands.js 导出的命令对象
-  ctx.commands.sshExec({ ... })
-  ctx.commands.utils.formatDate()
+
+  // 系统别名 (向后兼容)
+  ctx.system       // { WORKSPACE, WORKPLACE, PROJECT_NAME, PACKAGE_VERSION }
 
   // 选项
   ctx.verbose      // 是否启用详细输出
 }
+```
+
+### ctx.actions - 系统操作
+
+| 方法 | 说明 |
+|------|------|
+| `log.info(msg)` | 输出信息日志 |
+| `log.success(msg)` | 输出成功日志 |
+| `log.error(msg)` | 输出错误日志 |
+| `log.warn(msg)` | 输出警告日志 |
+| `shell.exec(cmd)` | 执行 shell 命令 |
+| `git.clone(opts)` | 克隆 git 仓库 |
+
+### ctx.utils - 工具函数
+
+| 方法 | 说明 |
+|------|------|
+| `getPackageVersion({ workspace, subdir })` | 获取 package.json 中的版本号 |
+| `templateReplace({ sourceFile, targetFile, variables })` | 替换模板文件中的变量 |
+
+**使用示例：**
+
+```javascript
+// 获取版本号
+const version = await ctx.utils.getPackageVersion({
+  workspace: ctx.projectRoot,
+  subdir: 'omni_sse'  // 可选子目录
+})
+
+// 替换模板变量
+await ctx.utils.templateReplace({
+  sourceFile: './docker-compose.tpl.yml',
+  targetFile: './docker-compose.yml',
+  variables: {
+    PROJECT_NAME: 'my-app',
+    DOCKER_IMAGE: `myapp:${version}`,
+    PORT: '3000'
+  }
+})
+```
+
+### ctx.environment - 环境属性
+
+| 属性 | 说明 |
+|------|------|
+| `name` | 环境名称（如 'test'、'prod'） |
+| `config` | 完整的环境配置对象 |
+| `config.branch` | 该环境的目标分支 |
+| `config.merge_from` | 合并来源分支（可选） |
+| `config.vars` | 环境特定变量 |
+| `config.description` | 环境描述（可选） |
+
+**使用示例：**
+
+```javascript
+// 获取环境名称
+const envName = ctx.environment.name  // 'test' 或 'prod'
+
+// 获取环境分支
+const branch = ctx.environment.config.branch  // 'main-test'
+
+// 获取合并来源（如果配置了）
+const mergeFrom = ctx.environment.config.merge_from  // 'dev-main'
+
+// 获取环境特定变量
+const envVars = ctx.environment.config.vars  // { DEPLOY_HOST: 'test.example.com' }
+
+// 根据环境执行不同逻辑
+if (envName === 'prod') {
+  console.log('🚀 部署到生产环境！')
+  // 生产环境特定逻辑
+} else if (envName === 'test') {
+  console.log('🧪 部署到测试环境...')
+  // 测试环境特定逻辑
+}
+
+// 通过环境变量访问（另一种方式）
+const envName2 = ctx.env.ENVIRONMENT  // 同 ctx.environment.name
+const branch2 = ctx.env.BRANCH        // 同 ctx.environment.config.branch
 ```
 
 ## 变量优先级
@@ -522,12 +618,35 @@ environments:
     merge_from: dev-main    # 合并来源分支（可选）
     vars:                   # 环境变量（可选）
       API_URL: https://test.api.com
-    commands:               # 可用命令列表（可选）
-      - name: deploy
-        description: 部署应用
-      - name: rollback
-        description: 回滚版本
 ```
+
+### 项目命令配置
+
+命令定义在项目级别，所有环境共享相同的命令列表：
+
+```yaml
+- name: platform
+  description: 平台服务
+  repos:
+    git: ${GIT_REPOS}/my-app/platform.git
+  commands:               # 项目级别的命令定义
+    - name: deploy
+      description: 部署应用
+      script: ./omniflow/deploy.js    # 脚本路径（相对于项目根目录）
+    - name: rollback
+      description: 回滚版本
+      script: ./omniflow/rollback.js
+  environments:
+    - name: test
+      branch: main-test
+    - name: prod
+      branch: main
+```
+
+**命令脚本路径解析：**
+1. 如果指定了 `script` 字段，使用该路径
+2. 如果 `name` 以 `./` 开头，直接使用该路径
+3. 默认使用 `./modules/<command-name>` 作为路径
 
 ### 全局配置
 

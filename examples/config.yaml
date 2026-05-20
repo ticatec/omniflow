@@ -8,6 +8,13 @@ omniflow:
     NAMESPACE: ticatec
     DEPLOY_USER: deploy
     GIT_REPOS: https://git.omnicube.local
+    DOCKER_ENV:
+      - UID=${MY_UID}
+      - GID=${MY_GID}
+      - CONFIG_MODE=consul
+      - CONSUL_PORT=8500
+      - CONSUL_HOST=consul
+      - CONSUL_TOKEN=50569407-c0ea-382a-0fa5-87a24141e80f
 
   # 全局 Git 配置
   git:
@@ -46,23 +53,26 @@ projects:
         repos:
           git: ${GIT_REPOS}/omni-gate/platform.git
           merge_strategy: github
+        commands:
+          - name: frontend-deploy
+            description: 部署前端应用
+            script: ./omniflow/frontend-deploy.js
+          - name: backend-build
+            description: 制作docker镜像
+            script: ./omniflow/backend-build.js
+            DOCKER_ENV:
+              - CONFIG_FILE=omni/omni-data-etl.yaml
+              - LOG_CONFIG=common-logger.yaml
+              - APP_NAME=omni-data-etl
         environments:
           - name: test
             description: 测试环境
             branch: main-test
             merge_from: dev-main
-            commands:
-              - name: frontend-deploy
-                description: 部署前端应用
-              - name: backend-build
-                description: 制作docker镜像
           - name: prod
             description: 生产环境
             branch: main
             merge_from: main-test
-            commands:
-              - name: frontend-deploy
-              - name: backend-build
 
       # ============ 二级分组：微服务 ============
       - name: micro-services
@@ -83,15 +93,15 @@ projects:
                 description: 认证服务
                 repos:
                   git: ${GIT_REPOS}/omni-gate/micro-services/user/auth.git
+                commands:
+                  - name: deploy
+                    description: 部署认证服务
+                    script: ./omniflow/deploy.js
                 environments:
                   - name: test
                     branch: main-test
-                    commands:
-                      - name: deploy
                   - name: prod
                     branch: main
-                    commands:
-                      - name: deploy
 
               - name: profile
                 description: 用户资料服务
@@ -115,18 +125,20 @@ projects:
                 description: Webhooks 微服务
                 repos:
                   git: ${GIT_REPOS}/omni-gate/micro-services/data/webhooks.git
+                commands:
+                  - name: deploy
+                    description: 部署 Webhooks 服务
+                    script: ./omniflow/deploy.js
+                  - name: rollback
+                    description: 回滚版本
+                    script: ./omniflow/rollback.js
                 environments:
                   - name: test
                     branch: main-test
                     merge_from: dev-main
-                    commands:
-                      - name: deploy
-                      - name: rollback
                   - name: prod
                     branch: main
                     merge_from: main-test
-                    commands:
-                      - name: deploy
 
               - name: etl
                 description: 数据 ETL 服务
@@ -151,13 +163,17 @@ projects:
         repos:
           git: ${GIT_REPOS}/supply-nexus/platform.git
           merge_strategy: github
+        commands:
+          - name: deploy
+            description: 部署到预发布环境
+            script: ./omniflow/deploy.js
+          - name: rollback
+            description: 回滚版本
+            script: ./omniflow/rollback.js
         environments:
           - name: release
             description: 预发布环境
             branch: main
-            commands:
-              - name: deploy
-              - name: rollback
 
       # ============ 二级嵌套：供应链分组 ============
       - name: supply-chain

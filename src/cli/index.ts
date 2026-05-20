@@ -38,8 +38,7 @@ program
   .description('List projects, environments, or commands')
   .argument('<type>', 'Type to list: projects, environments, commands')
   .argument('[project]', 'Project key (required for type: environments, commands)')
-  .argument('[environment]', 'Environment name (required for type: commands)')
-  .action(async (type, project, environment) => {
+  .action(async (type, project) => {
     const loader = new OmniflowConfigLoader()
 
     if (type === 'projects') {
@@ -69,25 +68,28 @@ program
         }
       }
     } else if (type === 'commands') {
-      if (!project || !environment) {
-        console.error('❌ Project key and environment name are required for listing commands')
+      if (!project) {
+        console.error('❌ Project key is required for listing commands')
         process.exit(1)
       }
 
-      const envConfig = await loader.getEnvironment(project, environment)
-      if (!envConfig) {
-        console.error(`❌ Environment not found: ${project}/${environment}`)
+      const projectConfig = await loader.getProject(project)
+      if (!projectConfig) {
+        console.error(`❌ Project not found: ${project}`)
         process.exit(1)
       }
 
-      if (!envConfig.commands || envConfig.commands.length === 0) {
-        console.log(`No commands defined for ${project}/${environment}`)
+      if (!projectConfig.commands || projectConfig.commands.length === 0) {
+        console.log(`No commands defined for ${project}`)
         return
       }
 
-      console.log(`Commands for ${project}/${environment}:\n`)
-      for (const cmd of envConfig.commands) {
+      console.log(`Commands for ${project}:\n`)
+      for (const cmd of projectConfig.commands) {
         console.log(`  ${cmd.name}${cmd.description ? ' - ' + cmd.description : ''}`)
+        if (cmd.script) {
+          console.log(`    script: ${cmd.script}`)
+        }
       }
     } else {
       console.error('❌ Invalid type. Use "projects", "environments", or "commands"')
@@ -193,25 +195,25 @@ program
   })
 
 // =============================================================================
-// Reload command - Fetch latest config from git and update cache
+// Update command - Fetch latest config from git and update cache
 // =============================================================================
 program
-  .command('reload')
-  .description('Reload configuration from git (update local cache)')
+  .command('update')
+  .description('Update configuration from git (fetch latest changes)')
   .action(async () => {
     const loader = new OmniflowConfigLoader()
 
     try {
       console.log('🔄 Fetching latest configuration from git...')
 
-      // Force reload (clears cache and fetches fresh)
-      await loader.reload()
+      // Force update (clears cache and fetches fresh)
+      await loader.update()
 
       // Show summary
       const projects = await loader.listProjects()
       const tree = await loader.listProjectTree()
 
-      console.log('✅ Configuration cache updated\n')
+      console.log('✅ Configuration updated\n')
       console.log(`📊 Summary:`)
       console.log(`   Projects: ${projects.length}`)
       console.log(`   Folders: ${tree.filter(n => n.type === 'folder').length}`)
@@ -223,7 +225,7 @@ program
         }
       }
     } catch (error) {
-      console.error(`❌ Failed to reload config: ${(error as Error).message}`)
+      console.error(`❌ Failed to update config: ${(error as Error).message}`)
       process.exit(1)
     }
   })

@@ -261,7 +261,7 @@ omniflow list environments app-platform/user-service
 omniflow list commands app-platform/user-service test
 
 # 8. Update local configuration cache
-omniflow reload
+omniflow update
 ```
 
 ## Script Context
@@ -312,7 +312,7 @@ On first run, fetch config from git and cache, subsequent runs use cache:
 
 ```bash
 omniflow run app-platform/user-service test  # Use cached config
-omniflow reload                               # Update cache from git
+omniflow update                               # Update cache from git
 ```
 
 ## Local Code Update Strategy

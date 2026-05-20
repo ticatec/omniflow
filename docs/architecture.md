@@ -270,7 +270,7 @@ omniflow list environments app-platform/user-service
 omniflow list commands app-platform/user-service test
 
 # 8. 更新本地配置缓存
-omniflow reload
+omniflow update
 ```
 
 ## 脚本上下文
@@ -321,7 +321,7 @@ export default async function pipeline(ctx) {
 
 ```bash
 omniflow run app-platform/user-service test  # 使用缓存的配置
-omniflow reload                               # 从 git 更新缓存
+omniflow update                               # 从 git 更新缓存
 ```
 
 ## 本地代码更新策略

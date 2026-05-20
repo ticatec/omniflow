@@ -43,6 +43,12 @@ npm run build
 npm link
 ```
 
+**Note:** When using `npm run start` to run commands, use `--` to separate arguments to prevent npm from parsing `-e` as `--enjoy-by`:
+
+```bash
+npm run start -- run -e test omni-gate/platform command-name
+```
+
 ## Quick Start
 
 ### 1. Set Environment Variables
@@ -265,6 +271,13 @@ projects:
           APP_NAME: platform
           IMAGE_PREFIX: company/platform
           DEPLOY_HOST: platform.example.com
+        commands:             # Project-level command definitions
+          - name: frontend-deploy
+            description: Deploy frontend application
+            script: ./omniflow/frontend-deploy.js
+          - name: backend-build
+            description: Build docker image
+            script: ./omniflow/backend-build.js
         environments:          # Required for projects
           - name: test
             description: Test Environment
@@ -272,18 +285,10 @@ projects:
             merge_from: dev-main
             vars:              # Environment variables (override project)
               DEPLOY_HOST: test.platform.example.com
-            commands:
-              - name: frontend-deploy
-                description: Deploy frontend application
-              - name: backend-build
-                description: Build docker image
           - name: prod
             description: Production Environment
             branch: main
             merge_from: main-test
-            commands:
-              - name: frontend-deploy
-              - name: backend-build
 
       # Project: User Service
       - name: user-service
@@ -350,8 +355,8 @@ omniflow list projects
 # List project environments
 omniflow list environments <project-path>
 
-# List available commands for environment
-omniflow list commands <project-path> <environment>
+# List available commands for project (commands are defined at project level, shared by all environments)
+omniflow list commands <project-path>
 
 # Show project details
 omniflow show <project-path> [environment]
@@ -359,8 +364,8 @@ omniflow show <project-path> [environment]
 # Clean workspace
 omniflow clean [project-path]
 
-# Reload configuration (fetch latest config from git and update config/)
-omniflow reload
+# Update configuration (fetch latest config from git)
+omniflow update
 ```
 
 ## Script Context
@@ -379,7 +384,7 @@ export default async function pipeline(ctx) {
   ctx.project.description // Project description
 
   // Environment Info
-  ctx.environment.name      // 'test'
+  ctx.environment.name      // 'test' - Environment name
   ctx.environment.config    // Environment configuration object
 
   // Command Info
@@ -397,14 +402,105 @@ export default async function pipeline(ctx) {
   // Omniflow Configuration
   ctx.omniflow     // omniflow section from config.yaml
 
-  // Shared Commands Library
+  // System Actions
+  ctx.actions.log.info(msg)       // Log info message
+  ctx.actions.log.success(msg)    // Log success message
+  ctx.actions.log.error(msg)      // Log error message
+  ctx.actions.shell.exec(cmd)     // Execute shell command
+  ctx.actions.git.clone(opts)     // Clone git repository
+
+  // Utility Functions
+  ctx.utils.getPackageVersion({ workspace, subdir })  // Get version from package.json
+  ctx.utils.templateReplace({ sourceFile, targetFile, variables })  // Replace template variables
+
+  // Shared Commands Library (from commands.js)
   ctx.commands     // Commands object exported from commands.js
-  ctx.commands.sshExec({ ... })
-  ctx.commands.utils.formatDate()
+
+  // System Alias (for backward compatibility)
+  ctx.system       // { WORKSPACE, WORKPLACE, PROJECT_NAME, PACKAGE_VERSION }
 
   // Options
   ctx.verbose      // Whether verbose output is enabled
 }
+```
+
+### ctx.actions - System Operations
+
+| Method | Description |
+|--------|-------------|
+| `log.info(msg)` | Log info message |
+| `log.success(msg)` | Log success message |
+| `log.error(msg)` | Log error message |
+| `log.warn(msg)` | Log warning message |
+| `shell.exec(cmd)` | Execute shell command |
+| `git.clone(opts)` | Clone git repository |
+
+### ctx.utils - Utility Functions
+
+| Method | Description |
+|--------|-------------|
+| `getPackageVersion({ workspace, subdir })` | Get version from package.json |
+| `templateReplace({ sourceFile, targetFile, variables })` | Replace variables in template file |
+
+**Usage Example:**
+
+```javascript
+// Get package version
+const version = await ctx.utils.getPackageVersion({
+  workspace: ctx.projectRoot,
+  subdir: 'omni_sse'  // optional subdirectory
+})
+
+// Replace template variables
+await ctx.utils.templateReplace({
+  sourceFile: './docker-compose.tpl.yml',
+  targetFile: './docker-compose.yml',
+  variables: {
+    PROJECT_NAME: 'my-app',
+    DOCKER_IMAGE: `myapp:${version}`,
+    PORT: '3000'
+  }
+})
+```
+
+### ctx.environment - Environment Attributes
+
+| Attribute | Description |
+|-----------|-------------|
+| `name` | Environment name (e.g., 'test', 'prod') |
+| `config` | Full environment configuration object |
+| `config.branch` | Target branch for this environment |
+| `config.merge_from` | Source branch for merge (optional) |
+| `config.vars` | Environment-specific variables |
+| `config.description` | Environment description (optional) |
+
+**Usage Example:**
+
+```javascript
+// Get environment name
+const envName = ctx.environment.name  // 'test' or 'prod'
+
+// Get environment branch
+const branch = ctx.environment.config.branch  // 'main-test'
+
+// Get merge source (if configured)
+const mergeFrom = ctx.environment.config.merge_from  // 'dev-main'
+
+// Get environment-specific variables
+const envVars = ctx.environment.config.vars  // { DEPLOY_HOST: 'test.example.com' }
+
+// Execute different logic based on environment
+if (envName === 'prod') {
+  console.log('🚀 Deploying to production!')
+  // Production-specific logic
+} else if (envName === 'test') {
+  console.log('🧪 Deploying to test environment...')
+  // Test-specific logic
+}
+
+// Access via environment variable (alternative)
+const envName2 = ctx.env.ENVIRONMENT  // Same as ctx.environment.name
+const branch2 = ctx.env.BRANCH        // Same as ctx.environment.config.branch
 ```
 
 ## Variable Priority
@@ -511,12 +607,35 @@ environments:
     merge_from: dev-main    # Source branch for merge (optional)
     vars:                   # Environment variables (optional)
       API_URL: https://test.api.com
-    commands:               # Available command list (optional)
-      - name: deploy
-        description: Deploy application
-      - name: rollback
-        description: Rollback version
 ```
+
+### Project Commands Configuration
+
+Commands are defined at the project level, shared by all environments:
+
+```yaml
+- name: platform
+  description: Platform Service
+  repos:
+    git: ${GIT_REPOS}/my-app/platform.git
+  commands:               # Project-level command definitions
+    - name: deploy
+      description: Deploy application
+      script: ./omniflow/deploy.js    # Script path (relative to project root)
+    - name: rollback
+      description: Rollback version
+      script: ./omniflow/rollback.js
+  environments:
+    - name: test
+      branch: main-test
+    - name: prod
+      branch: main
+```
+
+**Command script path resolution:**
+1. If `script` field is specified, use that path
+2. If `name` starts with `./`, use that path directly
+3. Default to `./modules/<command-name>` as the path
 
 ### Global Configuration
 

@@ -24,7 +24,7 @@ export default class GitLabRequest extends BaseMergeRequest {
         repoInfo: any,
         source: string,
         target: string
-    ): Promise<{ exists: boolean; id?: string | number }> {
+    ): Promise<{ exists: boolean; id?: string | number; prInfo?: any }> {
         const apiUrl = this.buildApiUrl(repoInfo)
         const response = await fetch(
             `${apiUrl}?source_branch=${source}&target_branch=${target}&state=opened`,
@@ -36,7 +36,7 @@ export default class GitLabRequest extends BaseMergeRequest {
         if (response.ok) {
             const mrs = await response.json() as any[]
             if (mrs.length > 0) {
-                return {exists: true, id: mrs[0].iid}
+                return {exists: true, id: mrs[0].iid, prInfo: mrs[0]}
             }
         }
         return {exists: false}
