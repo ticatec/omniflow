@@ -73,6 +73,7 @@ export interface CommandDefinition {
   name: string                      // 命令名称（如 frontend-deploy）
   description?: string              // 命令描述
   script?: string                   // 脚本文件路径（相对于项目根目录，如 ./modules/frontend-deploy.js）
+  args?: Record<string, string>     // 命令级别的变量（优先级最高，会合并到 env 中）
 }
 
 // 项目树节点（用于遍历）

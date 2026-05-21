@@ -204,6 +204,8 @@ folder.vars (可选)
 project.vars (可选)
     ↓
 environments[].vars (环境)
+    ↓
+commands[].args (命令，最高优先级)
 ```
 
 示例：
@@ -227,6 +229,31 @@ projects:
           - name: test
             vars:
               REPLICAS: "1"      # 覆盖项目
+        commands:
+          - name: deploy
+            args:
+              REPLICAS: "1"      # 命令级别，覆盖环境
+```
+
+### 命令级别参数
+
+命令可以定义自己的参数，优先级最高：
+
+```yaml
+commands:
+  - name: omni-sse
+    description: SSE 服务
+    script: omni_sse/omniflow/deploy.js
+    args:
+      deployMode: local
+      deployFolder: /tmp/sse
+
+  - name: omni-web-service
+    description: Web 服务
+    script: omni-web-service/omniflow/deploy.js
+    args:
+      deployMode: remote
+      deployFolder: /opt/web
 ```
 
 ## 分支合并流程
@@ -306,6 +333,7 @@ export default async function pipeline(ctx) {
   // 命令信息（如果指定了命令）
   ctx.command.name         // 'frontend-deploy'
   ctx.command.description
+  ctx.command.args         // 命令级别的参数 { key: value }
 
   // Omniflow 配置
   ctx.omniflow       // config.omniflow 全局配置

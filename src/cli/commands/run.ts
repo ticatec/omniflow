@@ -5,6 +5,7 @@ import { $ } from 'zx'
 import { OmniflowConfigLoader, settingsManager } from '../../config/index.js'
 import { executeGitWorkflow } from '../../core/git.js'
 import { createUtils } from '../utils/index.js'
+import type { CommandDefinition } from '../../types/config.js'
 
 interface RunOptions {
   dryRun: boolean
@@ -62,7 +63,7 @@ export async function runCommand(
   }
 
   // Validate all commands exist before running
-  const commandDefs: Array<{ name: string; description?: string; script?: string }> = []
+  const commandDefs: CommandDefinition[] = []
   for (const cmdName of commands) {
     const def = project.commands?.find((c: any) => c.name === cmdName)
     if (!def) {
@@ -158,6 +159,8 @@ export async function runCommand(
         ...process.env,
         // Merged variables (global -> project -> environment)
         ...mergedVars,
+        // Command-level args (highest priority)
+        ...(commandDef.args || {}),
         // Workspace info
         OMNIFLOW_HOME,
         WORKSPACE: workspacePath,
@@ -245,7 +248,8 @@ export async function runCommand(
               },
               command: {
                 name: commandName,
-                description: commandDef.description
+                description: commandDef.description,
+                args: commandDef.args || {}
               },
               git: {
                 url: gitConfig.url,

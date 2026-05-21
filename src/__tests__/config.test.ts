@@ -80,4 +80,28 @@ describe('CommandDefinition', () => {
     expect(command.name).toBe('deploy')
     expect(command.description).toBe('Deploy to production')
   })
+
+  it('should support command-level args', () => {
+    const command = {
+      name: 'deploy',
+      description: 'Deploy to production',
+      args: {
+        deployMode: 'local',
+        deployFolder: '/tmp/test'
+      }
+    }
+    expect(command.name).toBe('deploy')
+    expect(command.args).toEqual({
+      deployMode: 'local',
+      deployFolder: '/tmp/test'
+    })
+  })
+
+  it('should allow empty args', () => {
+    const command = {
+      name: 'deploy',
+      args: {}
+    }
+    expect(command.args).toEqual({})
+  })
 })

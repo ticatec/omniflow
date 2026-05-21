@@ -195,6 +195,8 @@ folder.vars (optional)
 project.vars (optional)
     ↓
 environments[].vars (environment)
+    ↓
+commands[].args (command, highest priority)
 ```
 
 Example:
@@ -218,6 +220,31 @@ projects:
           - name: test
             vars:
               REPLICAS: "1"      # Override project
+        commands:
+          - name: deploy
+            args:
+              REPLICAS: "1"      # Command level, override environment
+```
+
+### Command-level Arguments
+
+Commands can define their own arguments with the highest priority:
+
+```yaml
+commands:
+  - name: omni-sse
+    description: SSE Service
+    script: omni_sse/omniflow/deploy.js
+    args:
+      deployMode: local
+      deployFolder: /tmp/sse
+
+  - name: omni-web-service
+    description: Web Service
+    script: omni-web-service/omniflow/deploy.js
+    args:
+      deployMode: remote
+      deployFolder: /opt/web
 ```
 
 ## Branch Merge Flow
@@ -297,6 +324,7 @@ export default async function pipeline(ctx) {
   // Command info (if command specified)
   ctx.command.name         // 'frontend-deploy'
   ctx.command.description
+  ctx.command.args         // Command-level arguments { key: value }
 
   // Omniflow config
   ctx.omniflow       // config.omniflow global configuration
