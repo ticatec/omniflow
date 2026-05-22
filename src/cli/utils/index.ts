@@ -7,6 +7,7 @@ import path from 'path'
 import {promises as fs} from 'fs'
 import {$} from '../../core/shell.js'
 import {tmpdir} from 'os'
+import {platform} from 'os'
 
 /**
  * Replace template variables in a file
@@ -171,8 +172,9 @@ export async function tar(opts: {
         const tempTarPath = path.join(tempBase, `${filename}.${ext}`)
 
         console.log(`  📦 Creating ${ext} archive...`)
-        // Use --no-mac-metadata to avoid macOS extended header keywords
-        await $`cd ${tempBase} && tar --no-mac-metadata -${flags} ${tempTarPath} ${filename}`
+        // On macOS, use --no-mac-metadata to avoid extended header keywords
+        const macOption = platform() === 'darwin' ? '--no-mac-metadata' : ''
+        await $`cd ${tempBase} && tar ${macOption} -${flags} ${tempTarPath} ${filename}`
 
         // Get file stats
         const stats = await fs.stat(tempTarPath)
