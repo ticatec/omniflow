@@ -39,10 +39,11 @@ program
   .argument('<type>', 'Type to list: projects, environments, commands')
   .argument('[project]', 'Project key (required for type: environments, commands)')
   .action(async (type, project) => {
-    const loader = new OmniflowConfigLoader()
+    const loader = OmniflowConfigLoader.getInstance()
+    await loader.load()
 
     if (type === 'projects') {
-      const projects = await loader.listProjects()
+      const projects = loader.listProjects()
 
       console.log('Projects:\n')
       for (const p of projects) {
@@ -54,11 +55,11 @@ program
         process.exit(1)
       }
 
-      const environments = await loader.listEnvironments(project)
+      const environments = loader.listEnvironments(project)
 
       console.log(`Environments for ${project}:\n`)
       for (const envName of environments) {
-        const envConfig = await loader.getEnvironment(project, envName)
+        const envConfig = loader.getEnvironment(project, envName)
         console.log(`  ${envName}${envConfig?.description ? ' - ' + envConfig.description : ''}`)
         if (envConfig) {
           console.log(`    branch: ${envConfig.branch}`)
@@ -73,7 +74,7 @@ program
         process.exit(1)
       }
 
-      const projectConfig = await loader.getProject(project)
+      const projectConfig = loader.getProject(project)
       if (!projectConfig) {
         console.error(`❌ Project not found: ${project}`)
         process.exit(1)
@@ -106,9 +107,10 @@ program
   .argument('<project>', 'Project key')
   .argument('[environment]', 'Environment name (optional)')
   .action(async (project, environment) => {
-    const loader = new OmniflowConfigLoader()
+    const loader = OmniflowConfigLoader.getInstance()
+    await loader.load()
 
-    const projectConfig = await loader.getProject(project)
+    const projectConfig = loader.getProject(project)
     if (!projectConfig) {
       console.error(`❌ Project not found: ${project}`)
       process.exit(1)
@@ -128,7 +130,7 @@ program
     }
 
     if (environment) {
-      const envConfig = await loader.getEnvironment(project, environment)
+      const envConfig = loader.getEnvironment(project, environment)
       if (!envConfig) {
         console.error(`❌ Environment not found: ${environment}`)
         process.exit(1)
@@ -150,7 +152,7 @@ program
       }
     } else {
       console.log(`\nEnvironments:`)
-      const environments = await loader.listEnvironments(project)
+      const environments = loader.listEnvironments(project)
       for (const env of environments) {
         console.log(`  - ${env}`)
       }
@@ -201,7 +203,7 @@ program
   .command('update')
   .description('Update configuration from git (fetch latest changes)')
   .action(async () => {
-    const loader = new OmniflowConfigLoader()
+    const loader = OmniflowConfigLoader.getInstance()
 
     try {
       console.log('🔄 Fetching latest configuration from git...')
@@ -210,8 +212,8 @@ program
       await loader.update()
 
       // Show summary
-      const projects = await loader.listProjects()
-      const tree = await loader.listProjectTree()
+      const projects = loader.listProjects()
+      const tree = loader.listProjectTree()
 
       console.log('✅ Configuration updated\n')
       console.log(`📊 Summary:`)

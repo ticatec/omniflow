@@ -16,9 +16,25 @@ import {getGitConfig} from './git.js'
 import * as utils from "../cli/utils/index.js"
 
 export class OmniflowConfigLoader {
-    private config: OmniflowConfig | null = null
+    private config!: OmniflowConfig
     private initialized = false
-    private projectManager: ProjectManager | null = null
+    private projectManager!: ProjectManager
+
+    private static instance: OmniflowConfigLoader
+
+    private constructor() {
+
+    }
+
+    /**
+     * Get singleton instance
+     */
+    static getInstance(): OmniflowConfigLoader {
+        if (!OmniflowConfigLoader.instance) {
+            OmniflowConfigLoader.instance = new OmniflowConfigLoader()
+        }
+        return OmniflowConfigLoader.instance
+    }
 
     /**
      * Get settings manager instance
@@ -119,10 +135,6 @@ export class OmniflowConfigLoader {
      * Uses cached config if available, otherwise fetches from git
      */
     async load(): Promise<OmniflowConfig> {
-        if (this.config) {
-            return this.config
-        }
-
         // Ensure configuration is initialized
         await this.ensureInitialized()
 
@@ -148,24 +160,23 @@ export class OmniflowConfigLoader {
         this.projectManager = new ProjectManager(this.config)
 
         return this.config
-
     }
 
     /**
      * Get project manager instance
      */
-    private async getProjectManager(): Promise<ProjectManager> {
+    private getProjectManager(): ProjectManager {
         if (!this.projectManager) {
-            await this.load()
+            throw new Error('Config not loaded. Call load() first.')
         }
-        return this.projectManager!
+        return this.projectManager
     }
 
     /**
      * Get all projects (flattened, excluding folders)
      */
-    async listProjects(): Promise<Array<{ key: string; name: string; description?: string }>> {
-        const pm = await this.getProjectManager()
+    listProjects(): Array<{ key: string; name: string; description?: string }> {
+        const pm = this.getProjectManager()
         return pm.listProjects()
     }
 
@@ -173,16 +184,16 @@ export class OmniflowConfigLoader {
      * Get a specific project configuration by path
      * @param projectPath Project path like "omni-gate/platform" or "platform"
      */
-    async getProject(projectPath: string): Promise<any> {
-        const pm = await this.getProjectManager();
+    getProject(projectPath: string): any {
+        const pm = this.getProjectManager()
         const project = pm.getProject(projectPath)
         if (!project) {
             console.error(`❌ Project not found: ${projectPath}`)
-            const available = await this.listProjects()
+            const available = this.listProjects()
             if (available.length > 0) {
                 console.log(`\nAvailable projects: ${available.map((p: any) => p.key).join(', ')}`)
             }
-            throw new Error(`${projectPath} not found`);
+            throw new Error(`${projectPath} not found`)
         }
         return project
     }
@@ -190,8 +201,8 @@ export class OmniflowConfigLoader {
     /**
      * List all items (including folders) with their structure
      */
-    async listProjectTree(): Promise<ProjectNode[]> {
-        const pm = await this.getProjectManager()
+    listProjectTree(): ProjectNode[] {
+        const pm = this.getProjectManager()
         return pm.listProjectTree()
     }
 
@@ -199,8 +210,8 @@ export class OmniflowConfigLoader {
      * List environments for a project
      * @param projectPath Project path like "omni-gate/platform"
      */
-    async listEnvironments(projectPath: string): Promise<string[]> {
-        const pm = await this.getProjectManager()
+    listEnvironments(projectPath: string): string[] {
+        const pm = this.getProjectManager()
         return pm.listEnvironments(projectPath)
     }
 
@@ -209,18 +220,18 @@ export class OmniflowConfigLoader {
      * @param projectPath Project path like "omni-gate/platform"
      * @param envName Environment name like "test" or "prod"
      */
-    async getEnvironment(projectPath: string, envName: string): Promise<EnvironmentConfig> {
-        const pm = await this.getProjectManager()
-        let envConfig = pm.getEnvironment(projectPath, envName);
+    getEnvironment(projectPath: string, envName: string): EnvironmentConfig {
+        const pm = this.getProjectManager()
+        const envConfig = pm.getEnvironment(projectPath, envName)
         if (!envConfig) {
             console.error(`❌ Environment not found: ${envName}`)
-            const available = await this.listEnvironments(projectPath)
+            const available = this.listEnvironments(projectPath)
             if (available.length > 0) {
                 console.log(`\nAvailable environments: ${available.join(', ')}`)
             }
-            throw new Error(`Environment not found: ${envName} in project: ${projectPath}`);
+            throw new Error(`Environment not found: ${envName} in project: ${projectPath}`)
         }
-        return envConfig;
+        return envConfig
     }
 
     /**
@@ -228,21 +239,20 @@ export class OmniflowConfigLoader {
      * @param projectPath Project path like "omni-gate/platform"
      * @param envName Environment name like "test" or "prod"
      */
-    async getGitConfig(projectPath: string, envName?: string): Promise<{
+    getGitConfig(projectPath: string, envName?: string): {
         url: string
         branch: string
         username?: string
         password?: string
         merge_from?: string
         strategy: string
-    }> {
-        const config = await this.load()
-        const gitConfig = getGitConfig(config, projectPath, envName);
+    } {
+        const gitConfig = getGitConfig(this.config, projectPath, envName)
         if (!gitConfig) {
-            console.error(`❌ Git configuration not found for project: ${projectPath}`);
-            throw new Error(`Git configuration not found for project: ${projectPath}`);
+            console.error(`❌ Git configuration not found for project: ${projectPath}`)
+            throw new Error(`Git configuration not found for project: ${projectPath}`)
         }
-        return gitConfig;
+        return gitConfig
     }
 
     /**
@@ -367,11 +377,7 @@ export class OmniflowConfigLoader {
             // Copy plugin files to share dependencies
             await this.copyPlugins(configDir)
 
-            // Clear cache
-            this.config = null
             this.initialized = false
-            this.projectManager = null
-
             // Reload
             await this.load()
 
@@ -386,16 +392,14 @@ export class OmniflowConfigLoader {
      * Priority: omniflow.env -> envConfig.vars (later overrides earlier)
      * String values override, array and object values are merged
      */
-    async getMergedVars(projectPath: string, envName: string): Promise<Record<string, VarValue>> {
-        const envConfig = await this.getEnvironment(projectPath, envName)
+    getMergedVars(projectPath: string, envName: string): Record<string, VarValue> {
+        const envConfig = this.getEnvironment(projectPath, envName)
         if (!envConfig) {
             throw new Error(`Environment not found: ${envName}`)
         }
 
-        const config = await this.load()
-
         // Start with global vars
-        const result: Record<string, VarValue> = {...(config.omniflow?.env || {})}
+        const result: Record<string, VarValue> = {...(this.config.omniflow?.env || {})}
 
         // Merge with environment vars (highest priority)
         return mergeVars(result, envConfig)
@@ -405,9 +409,8 @@ export class OmniflowConfigLoader {
      * Get SSH configurations from omniflow global config
      * @returns SSH server configurations object
      */
-    async getSshConfig(): Promise<Record<string, any> | undefined> {
-        const config = await this.load()
-        return config.omniflow?.ssh
+    getSshConfig(): Record<string, any> | undefined {
+        return this.config?.omniflow?.ssh
     }
 
     /**
@@ -458,6 +461,6 @@ export class OmniflowConfigLoader {
  * @returns The loaded configuration
  */
 export async function loadOmniflowConfig(): Promise<OmniflowConfig> {
-    const loader = new OmniflowConfigLoader()
+    const loader = OmniflowConfigLoader.getInstance()
     return await loader.load()
 }

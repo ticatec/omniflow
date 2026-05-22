@@ -62,39 +62,46 @@ export interface SshConnectionConfig extends SshAuthConfig {
  * Copy file to remote via SCP
  *
  * @param sshConfig - SSH connection configuration
- * @param srcFile - Local source file path
- * @param targetFile - Remote target file path (including filename)
+ * @param srcFile - Local source file path (full path with filename)
+ * @param targetFolder - Remote target folder path
  *
  * @example
  * ```ts
- * await ssh.scpFile(
+ * await ssh.cp(
  *   { host: '192.168.1.100', user: 'deploy', privateKeyFile: '/path/to/key' },
- *   './app.tar.gz',
- *   '/var/www/releases/app.tar.gz'
+ *   './releases/app.tar.gz',
+ *   '/var/www/releases'
  * )
+ * // Result: ./releases/app.tar.gz -> deploy@192.168.1.100:/var/www/releases/app.tar.gz
  * ```
  */
-async function scpFile(
+async function cp(
     sshConfig: SshConnectionConfig,
     srcFile: string,
-    targetFile: string
+    targetFolder: string
 ): Promise<void> {
     const { host, port } = sshConfig
+    const filename = path.basename(srcFile)
 
-    // Extract directory path from target file
-    const targetDir = path.dirname(targetFile)
-
-    console.log(`  📤 SCP: ${srcFile} -> ${sshConfig.user}@${host}:${port || 22}:${targetFile}`)
+    console.log(`  📤 SCP: ${srcFile} -> ${sshConfig.user}@${host}:${port || 22}:${targetFolder}/`)
 
     // Create target directory if it doesn't exist
-    console.log(`  📁 Ensuring remote directory exists: ${targetDir}`)
-    await exec(sshConfig, `mkdir -p ${targetDir}`)
+    console.log(`  📁 Ensuring remote directory exists: ${targetFolder}`)
+    await exec(sshConfig, `mkdir -p ${targetFolder}`)
 
-    // Copy file to remote
-    const connStr = await buildScpConnection(sshConfig)
-    const remoteDest = `${sshConfig.user}@${host}:${targetFile}`
+    // Build SCP command as string for bash -c
+    let keyFileArg = ''
+    if (sshConfig.privateKeyFile) {
+        keyFileArg = `-i ${sshConfig.privateKeyFile}`
+    } else if (sshConfig.privateKey) {
+        const keyFile = await createTempKeyFile(sshConfig.privateKey)
+        keyFileArg = `-i ${keyFile}`
+    }
 
-    await $`scp ${connStr} ${srcFile} ${remoteDest}`
+    const remoteDest = `${sshConfig.user}@${host}:${targetFolder}/`
+    const scpCmd = `scp -o StrictHostKeyChecking=accept-new -P ${port || 22} ${keyFileArg} ${srcFile} ${remoteDest}`
+
+    await $`bash -c ${scpCmd}`
     console.log(`  ✓ Copy complete`)
 }
 
@@ -117,67 +124,6 @@ async function createTempKeyFile(keyContent: string): Promise<string> {
     const keyFile = path.join(tempDir, 'id_rsa')
     await fs.writeFile(keyFile, keyContent, { mode: 0o600 })
     return keyFile
-}
-
-/**
- * Build SSH command-line options for authentication
- *
- * @param auth - SSH authentication configuration
- * @returns SSH options string (e.g., "-i /path/to/key")
- *
- * @example
- * ```ts
- * const opts = await buildSshOptions({ user: 'deploy', privateKey: '...' })
- * // Returns: "-i /tmp/ssh-key-1234567890/id_rsa"
- * ```
- */
-async function buildSshOptions(auth: SshAuthConfig): Promise<string> {
-    const options: string[] = []
-
-    if (auth.privateKey) {
-        const keyFile = await createTempKeyFile(auth.privateKey)
-        options.push(`-i ${keyFile}`)
-    } else if (auth.privateKeyFile) {
-        options.push(`-i ${auth.privateKeyFile}`)
-    }
-
-    return options.join(' ')
-}
-
-/**
- * Build SSH connection string for ssh command
- *
- * @param config - SSH connection configuration
- * @returns SSH connection arguments
- *
- * @example
- * ```ts
- * const connStr = await buildSshConnection({ user: 'deploy', host: '192.168.1.100', port: 22 })
- * // Returns: "-p 22 deploy@192.168.1.100"
- * ```
- */
-async function buildSshConnection(config: SshConnectionConfig): Promise<string> {
-    const port = config.port || 22
-    const authOptions = await buildSshOptions(config)
-    return `-p ${port} ${authOptions} ${config.user}@${config.host}`
-}
-
-/**
- * Build SCP connection string for scp command
- *
- * @param config - SSH connection configuration
- * @returns SCP connection arguments
- *
- * @example
- * ```ts
- * const connStr = await buildScpConnection({ user: 'deploy', host: '192.168.1.100', port: 22 })
- * // Returns: "-P 22 -i /path/to/key"
- * ```
- */
-async function buildScpConnection(config: SshConnectionConfig): Promise<string> {
-    const port = config.port || 22
-    const authOptions = await buildSshOptions(config)
-    return `-P ${port} ${authOptions}`
 }
 
 /**
@@ -220,13 +166,35 @@ async function exec(
         console.log(`     Dir: ${remoteDir}`)
     }
 
-    const connStr = await buildSshConnection(sshConfig)
-    const fullCommand = remoteDir
-        ? `ssh ${connStr} "cd ${remoteDir} && ${command}"`
-        : `ssh ${connStr} "${command}"`
+    // Build SSH arguments
+    const args = [
+        'ssh',
+        '-o', 'StrictHostKeyChecking=accept-new',
+        '-p', String(port || 22)
+    ]
+
+    // Add identity file if using private key auth
+    if (sshConfig.privateKeyFile) {
+        args.push('-i', sshConfig.privateKeyFile)
+    } else if (sshConfig.privateKey) {
+        const keyFile = await createTempKeyFile(sshConfig.privateKey)
+        args.push('-i', keyFile)
+    }
+
+    // Add host and command
+    const hostStr = `${sshConfig.user}@${host}`
+
+    // Build the remote command with optional directory change
+    let remoteCmd = command
+    if (remoteDir) {
+        remoteCmd = `cd ${remoteDir} || exit 1\n${command}`
+    }
+
+    // Use bash -c with heredoc for proper command handling
+    const sshCommand = `ssh ${args.slice(1).join(' ')} ${hostStr} << 'EOF'\n${remoteCmd}\nEOF`
 
     try {
-        const result = await $`${fullCommand}`
+        const result = await $`bash -c ${sshCommand}`
         return {
             stdout: result.stdout.trim(),
             stderr: result.stderr.trim(),
@@ -243,5 +211,5 @@ async function exec(
 
 export default {
     exec,
-    scpFile
+    cp
 }

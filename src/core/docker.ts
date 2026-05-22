@@ -154,9 +154,7 @@ async function composeOnRemote(
     console.log(`     Template: ${tplFile}`);
 
     // 1. Copy template file to remote (creates directory if needed)
-    const filename = path.basename(tplFile);
-    const remoteTplPath = path.join(targetDir, filename);
-    await ssh.scpFile(sshConfig, tplFile, remoteTplPath);
+    await ssh.cp(sshConfig, tplFile, targetDir);
 
     // 2. Execute pre-commands if provided
     if (preCommands) {
@@ -170,7 +168,8 @@ async function composeOnRemote(
 
     // 3. Execute docker-compose commands
     console.log(`  🚀 Starting docker-compose...`);
-    const composeCmd = `docker-compose -f ${remoteTplPath} ${commands}`;
+    const filename = path.basename(tplFile);
+    const composeCmd = `docker-compose -f ${filename} ${commands}`;
     const result = await ssh.exec(sshConfig, composeCmd, targetDir);
 
     if (result.exitCode !== 0) {

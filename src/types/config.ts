@@ -73,7 +73,6 @@ export interface CommandDefinition {
   name: string                      // 命令名称（如 frontend-deploy）
   description?: string              // 命令描述
   folder?: string                   // 命令所在子目录（相对于项目根目录，如 omni-gateway）
-  appName?: string                  // 应用名称（可选，会传递到 command.appName）
   script: string                   // 脚本文件路径（相对于命令主目录，如 omniflow/build_docker.js）
   args?: Record<string, string>     // 命令级别的变量（优先级最高，会合并到 env 中）
 }

@@ -1,33 +1,33 @@
 import type {CommandDefinition} from '../../types/config.js'
 import {$} from '../../core/shell.js'
-import path from "path";
-import {OmniflowConfigLoader} from "../../config/index.js";
-import {EnvironmentConfig} from "../../types/config.js";
-import git from "../../core/git.js";
-import {RunOptions, ScriptContext} from "./types.js";
-import nodeActions from "../../core/node.js";
-import sshActions from "../../core/ssh.js";
-import webActions from "../../core/web.js";
-import dockerActions from "../../core/docker.js";
-import * as utils from "../utils/index.js";
+import path from "path"
+import {OmniflowConfigLoader} from "../../config/index.js"
+import {EnvironmentConfig} from "../../types/config.js"
+import git from "../../core/git.js"
+import {RunOptions, ScriptContext} from "./types.js"
+import nodeActions from "../../core/node.js"
+import sshActions from "../../core/ssh.js"
+import webActions from "../../core/web.js"
+import dockerActions from "../../core/docker.js"
+import * as utils from "../utils/index.js"
 
 interface ExecuteCommand {
-    name: string;
+    name: string
     def?: CommandDefinition
 }
 
 export default class CommandExecutor {
 
-    private readonly projectKey: string;
-    private readonly envName: string;
-    private commands: Array<ExecuteCommand>;
-    private readonly options: RunOptions;
-    private readonly omniflowHome: string;
-    private readonly projectRoot: string;
-    private readonly loader: OmniflowConfigLoader;
-    private project!: any;
-    private envConfig!: EnvironmentConfig;
-    private context!: ScriptContext;
+    private readonly projectKey: string
+    private readonly envName: string
+    private commands: Array<ExecuteCommand>
+    private readonly options: RunOptions
+    private readonly omniflowHome: string
+    private readonly projectRoot: string
+    private readonly loader: OmniflowConfigLoader
+    private project!: any
+    private envConfig!: EnvironmentConfig
+    private context!: ScriptContext
 
     /**
      * Create a new CommandExecutor
@@ -38,13 +38,13 @@ export default class CommandExecutor {
      * @param options - Execution options
      */
     constructor(omniflowHome: string, projectKey: string, envName: string, commands: string[], options: RunOptions) {
-        this.omniflowHome = omniflowHome;
-        this.projectKey = projectKey;
-        this.envName = envName;
-        this.commands = commands.map((cmd: string) => ({name: cmd}));
-        this.options = options;
-        this.projectRoot = path.join(this.omniflowHome, 'project', ...projectKey.split('/'));
-        this.loader = new OmniflowConfigLoader();
+        this.omniflowHome = omniflowHome
+        this.projectKey = projectKey
+        this.envName = envName
+        this.commands = commands.map((cmd: string) => ({name: cmd}))
+        this.options = options
+        this.projectRoot = path.join(this.omniflowHome, 'project', ...projectKey.split('/'))
+        this.loader = OmniflowConfigLoader.getInstance()
     }
 
     /**
@@ -52,8 +52,12 @@ export default class CommandExecutor {
      * Loads project config, maps command names to definitions, fetches project, builds context
      */
     private async prepare(): Promise<void> {
-        this.project = await this.loader.getProject(this.projectKey)
-        this.envConfig = await this.loader.getEnvironment(this.projectKey, this.envName)
+        // Load config first (async)
+        await this.loader.load()
+
+        // Get project and environment (sync methods now)
+        this.project = this.loader.getProject(this.projectKey)
+        this.envConfig = this.loader.getEnvironment(this.projectKey, this.envName)
 
         // Map command names to their definitions
         for (const cmd of this.commands) {
@@ -82,16 +86,19 @@ export default class CommandExecutor {
                 }
             }
             console.log(`\nUsage: omniflow run -e ${this.envName} ${this.projectKey} <command> [command...]`)
-            throw new Error("Invalid command name");
+            throw new Error("Invalid command name")
         }
         console.log(`\n🚀 Running: ${this.project.name || this.projectKey}`)
         console.log(`   Project: ${this.projectKey}`)
         console.log(`   Environment: ${this.envName}`)
         console.log(`   Commands: ${this.commands.map(c => c.name).join(', ')}`)
         console.log(`   Workspace: ${this.projectRoot}`)
-        console.log('');
+        console.log('')
 
-        const mergedVars = await this.loader.getMergedVars(this.projectKey, this.envName);
+        // Get merged vars and SSH config (sync methods now)
+        const mergedVars = this.loader.getMergedVars(this.projectKey, this.envName)
+        const sshConfig = this.loader.getSshConfig()
+
         const actions = {
             shell: {
                 exec: async (cmd: string) => {
@@ -106,10 +113,12 @@ export default class CommandExecutor {
             ssh: sshActions,
             web: webActions,
             docker: dockerActions
-        };
-        await this.fetchProject();
-        const sharedCommands = await this.loader.loadCommands(actions);
-        const sshConfig = await this.loader.getSshConfig();
+        }
+
+        await this.fetchProject()
+
+        const sharedCommands = await this.loader.loadCommands(actions)
+
         this.context = {
             workspace: this.projectRoot,
             projectRoot: this.projectRoot,
@@ -122,6 +131,7 @@ export default class CommandExecutor {
             sshConfig: sshConfig,
             verbose: this.options.verbose
         }
+
         if (this.options.verbose) {
             console.log(`\n📜 Base environment variables:`)
             console.log(`   OMNIFLOW_HOME=${this.omniflowHome}`)
@@ -136,7 +146,7 @@ export default class CommandExecutor {
      * Creates workspace and clones/updates the project
      */
     private async fetchProject() {
-        const gitConfig = await this.loader.getGitConfig(this.projectKey, this.envName);
+        const gitConfig = this.loader.getGitConfig(this.projectKey, this.envName)
         console.log(`   Branch: ${gitConfig.branch}`)
         if (gitConfig.merge_from) {
             console.log(`   (Remote merge: ${gitConfig.merge_from} → ${gitConfig.branch})`)
@@ -180,7 +190,6 @@ export default class CommandExecutor {
         if (this.options.verbose) {
             console.log(`\n📜 Command: ${commandDef.name}`)
             console.log(`   Command Root: ${commandRoot}`)
-            console.log(`   App name: ${commandDef.appName}`)
             console.log(`   Args: ${JSON.stringify(commandDef.args || {})}`)
         }
 
@@ -192,7 +201,7 @@ export default class CommandExecutor {
             const scriptModule = await import(resolvedScriptPath)
 
             if (typeof scriptModule.default === 'function') {
-                await scriptModule.default(this.context, commandDef.folder, commandDef.appName, commandDef.args)
+                await scriptModule.default(this.context, commandDef.folder, commandDef.args)
             } else {
                 throw new Error(`Script must export a default function: ${resolvedScriptPath}`)
             }

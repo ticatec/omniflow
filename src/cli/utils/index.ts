@@ -7,48 +7,6 @@ import path from 'path'
 import {promises as fs} from 'fs'
 import {$} from '../../core/shell.js'
 import {tmpdir} from 'os'
-import type {SshServerConfig} from '../../types/config.js'
-
-/**
- * Get SSH configuration by key
- * @param key - SSH configuration key (e.g., 'test', 'prod')
- * @param sshConfig - SSH configurations object from ctx.sshConfig
- * @returns SSH server configuration or undefined if not found
- *
- * @example
- * ```ts
- * // In deployment script
- * const sshConfig = ctx.utils.getSshConfig('prod', ctx.sshConfig);
- * if (sshConfig) {
- *   console.log(`Server: ${sshConfig.server}`);
- *   console.log(`User: ${sshConfig.user}`);
- * }
- * ```
- */
-export function getSshConfig(
-    key: string,
-    sshConfig?: Record<string, SshServerConfig>
-): SshServerConfig | undefined {
-    return sshConfig?.[key];
-}
-
-/**
- * Get all available SSH configuration keys
- * @param sshConfig - SSH configurations object from ctx.sshConfig
- * @returns Array of available SSH configuration keys
- *
- * @example
- * ```ts
- * const keys = ctx.utils.getSshConfigKeys(ctx.sshConfig);
- * console.log('Available SSH configs:', keys);
- * // Output: ['test', 'prod']
- * ```
- */
-export function getSshConfigKeys(
-    sshConfig?: Record<string, SshServerConfig>
-): string[] {
-    return sshConfig ? Object.keys(sshConfig) : [];
-}
 
 /**
  * Replace template variables in a file
@@ -76,18 +34,6 @@ export async function templateReplace(opts: {
     // Write target file
     await fs.writeFile(targetFile, result, 'utf-8')
     console.log(`  ✓ Template: ${sourceFile} -> ${targetFile}`)
-}
-
-/**
- * Get version from package.json
- * @param packageDir - Directory containing package.json
- * @returns Version string
- */
-export async function getPackageVersion(packageDir: string): Promise<string> {
-    const packageJsonPath = path.join(packageDir, 'package.json')
-    const content = await fs.readFile(packageJsonPath, 'utf-8')
-    const packageJson = JSON.parse(content)
-    return packageJson.version
 }
 
 /**
@@ -213,7 +159,11 @@ export async function tar(opts: {
 
     try {
         // Copy source directory contents to temp directory
-        await fs.cp(sourceDir, tempDir, {recursive: true})
+        // Set COPYFILE_DISABLE to avoid macOS extended attributes
+        const originalEnv = $.env
+        $.env = {...process.env, COPYFILE_DISABLE: '1'}
+        await $`cp -R ${sourceDir}/ ${tempDir}`
+        $.env = originalEnv
 
         // Determine extension and tar flags
         const ext = zip ? 'tar.gz' : 'tar'
@@ -221,7 +171,8 @@ export async function tar(opts: {
         const tempTarPath = path.join(tempBase, `${filename}.${ext}`)
 
         console.log(`  📦 Creating ${ext} archive...`)
-        await $`cd ${tempBase} && tar -${flags} ${tempTarPath} ${filename}`
+        // Use --no-mac-metadata to avoid macOS extended header keywords
+        await $`cd ${tempBase} && tar --no-mac-metadata -${flags} ${tempTarPath} ${filename}`
 
         // Get file stats
         const stats = await fs.stat(tempTarPath)
