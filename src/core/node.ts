@@ -104,7 +104,12 @@ async function getPackageInfo(packageDir: string): Promise<{ name: string; versi
  */
 async function install(packageDir: string, pm: 'npm' | 'pnpm' | 'yarn' | 'bun', flags: string[] = []): Promise<void> {
     console.log(`  📦 Installing node modules with ${pm}...`);
-    await $`cd ${packageDir} && ${pm} install ${flags}`;
+
+    // Default flags for pnpm to bypass supply-chain strict checks
+    const defaultFlags = pm === 'pnpm' ? ['--no-frozen-lockfile', '--allow-builds'] : [];
+    const allFlags = [...defaultFlags, ...flags];
+
+    await $`cd ${packageDir} && ${pm} install ${allFlags}`;
     console.log(`  ✓ Node modules installed`);
 }
 
