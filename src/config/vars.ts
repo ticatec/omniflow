@@ -1,18 +1,22 @@
 /**
  * Variable merging utilities for Omniflow
  * Handles merging of configuration variables from multiple levels
- * with support for both string and array values
+ * with support for string, array, and object values
  */
 
 import type { ProjectItem, EnvironmentConfig } from '../types/config.js'
 
+export type VarValue = string | string[] | Record<string, any>
+
 /**
- * Merge vars from source into target
- * String values override, array values are merged
+ * Recursively merge vars from source into target
+ * - String values: override
+ * - Array values: merge (no duplicates)
+ * - Object values: deep merge (recursive)
  */
 function mergeVars(
-  target: Record<string, string | string[]>,
-  source: Record<string, string | string[]> | undefined
+  target: Record<string, VarValue>,
+  source: Record<string, VarValue> | undefined
 ): void {
   if (!source) return
 
@@ -33,8 +37,18 @@ function mergeVars(
         // No existing array, use new array
         target[key] = value
       }
+    } else if (typeof value === 'object' && value !== null) {
+      // Object value: deep merge with existing object
+      const existing = target[key]
+      if (typeof existing === 'object' && existing !== null && !Array.isArray(existing)) {
+        // Deep merge objects
+        target[key] = {...(existing as Record<string, any>), ...value}
+      } else {
+        // No existing object, use new object
+        target[key] = value
+      }
     } else {
-      // String value: override
+      // String or primitive value: override
       target[key] = value
     }
   }
@@ -43,14 +57,14 @@ function mergeVars(
 /**
  * Collect vars from the project path (traverses folder hierarchy)
  * Returns vars from all folders in the path + the project itself
- * Supports both string values and array values (arrays are merged)
+ * Supports string, array, and object values (arrays and objects are merged)
  */
 export function collectVarsFromPath(
   pathParts: string[],
-  omniflowEnv: Record<string, string | string[]> | undefined,
+  omniflowEnv: Record<string, VarValue> | undefined,
   projects: ProjectItem[]
-): Record<string, string | string[]> {
-  const vars: Record<string, string | string[]> = {}
+): Record<string, VarValue> {
+  const vars: Record<string, VarValue> = {}
 
   // Start with global vars
   mergeVars(vars, omniflowEnv)
@@ -78,13 +92,13 @@ export function collectVarsFromPath(
 /**
  * Get merged variables for a project and environment
  * Priority: global -> parent folders -> project -> environment (later overrides earlier)
- * Array values are merged, string values are overridden
+ * String values override, array and object values are merged
  */
 export function getMergedVars(
-  pathVars: Record<string, string | string[]>,
+  pathVars: Record<string, VarValue>,
   envConfig: EnvironmentConfig
-): Record<string, string | string[]> {
-  const result: Record<string, string | string[]> = { ...pathVars }
+): Record<string, VarValue> {
+  const result: Record<string, VarValue> = { ...pathVars }
 
   if (envConfig.vars) {
     mergeVars(result, envConfig.vars)

@@ -26,7 +26,7 @@ Project repo/omniflow/deploy.js → Deployment script, managed by project itself
 - **Folder Nesting** - Support project grouping with arbitrary nesting
 - **Environment Separation** - Multi-environment configuration support
 - **Branch Merge Flow** - Define merge strategies between environments
-- **Simple Actions** - git, shell, log three core operations
+- **Simple Actions** - git, shell core operations
 - **Command List** - Define available deployment commands in config
 
 ## Installation
@@ -139,77 +139,203 @@ Example:
 
 ### 3. Create Shared Commands Library (Optional)
 
-Create `commands.js` in the configuration repository to define common commands that can be used by all projects:
+Create `commands.js` in the configuration repository to define common commands that can be used by all projects.
+
+**File Format Requirements:**
+- Must export a default function: `export default function loadCommands(actions, utils)`
+- Function receives `actions` and `utils` provided by omniflow
+- Function returns an object containing custom commands
+
+**Complete Example:**
 
 ```javascript
 /**
  * Omniflow Shared Commands Library
  * Location: Configuration repository root (same level as config.yaml)
+ *
+ * Must export default function:
+ * export default function loadCommands(actions, utils) { return {...} }
  */
-
-import { $ } from 'zx'
 
 /**
- * SSH Remote Command Execution
+ * loadCommands - entry point for omniflow to load commands
+ * @param {Object} actions - core operations provided by omniflow
+ * @param {Object} utils - utility functions provided by omniflow
+ * @returns {Object} custom commands object
+ *
+ * actions includes:
+ *   - shell: { exec(cmd) } - shell command execution
+ *   - git: { clone(opts) } - git operations
+ *   - node: { install, build, execute, getPackageInfo, ... } - Node.js operations
+ *   - ssh: { exec, scpFile } - SSH/SCP operations
+ *   - web: { build(opts) } - Web frontend build
+ *   - docker: { compose, composeOnRemote } - Docker Compose operations
+ *
+ * utils includes:
+ *   - getPackageVersion({ workspace, subdir })
+ *   - templateReplace({ sourceFile, targetFile, variables })
+ *   - tar({ sourceDir, filename, outputDir })
  */
-export async function sshExec({ host, user, command, env = {}, port = 22 }) {
-  const envStr = Object.entries(env)
-    .map(([k, v]) => `export ${k}="${v}"`)
-    .join(' ')
+export default function loadCommands(actions, utils) {
+  const { ssh, node, web, docker } = actions
 
-  const fullCommand = envStr ? `${envStr}; ${command}` : command
-  const sshCmd = `ssh -o StrictHostKeyChecking=no -p ${port} ${user}@${host} "${fullCommand.replace(/"/g, '\\"')}"`
+  /**
+   * Remote deployment
+   * Execute deployment commands on remote server via SSH
+   */
+  async function remoteDeploy({ host, user, privateKeyFile, remotePath, command, port = 22 }) {
+    console.log(`🚀 Deploying to ${user}@${host}:${remotePath}`)
 
-  try {
-    const result = await $`sh -c ${sshCmd}`
-    return { success: true, stdout: result.stdout, stderr: result.stderr }
-  } catch (error) {
-    return { success: false, stdout: error.stdout || '', stderr: error.stderr || '', error: error.message }
+    // Use ssh operation provided by omniflow
+    const result = await ssh.exec(
+      { host, user, privateKeyFile, port },
+      `cd ${remotePath} && ${command}`
+    )
+
+    if (result.exitCode !== 0) {
+      throw new Error(`Deployment failed: ${result.stderr}`)
+    }
+
+    console.log(`✓ Deployment complete`)
+    return result.stdout
+  }
+
+  /**
+   * Build Node.js app and create tar archive
+   * Uses node operation provided by omniflow
+   */
+  async function buildAndTar({ workspace, pm = 'pnpm', target = 'build', outputDir = './releases' }) {
+    // Install dependencies
+    await node.install(workspace, pm)
+
+    // Build
+    await node.build(workspace, pm)
+
+    // Get version info
+    const pkgInfo = await node.getPackageInfo(workspace)
+    const filename = `${pkgInfo.name}-${pkgInfo.version}`
+
+    // Create archive (using tar utility provided by omniflow)
+    const tarPath = await utils.tar({
+      sourceDir: `${workspace}/${target}`,
+      filename,
+      outputDir
+    })
+
+    console.log(`✓ Build complete: ${tarPath}`)
+    return { tarPath, version: pkgInfo.version }
+  }
+
+  /**
+   * Deploy web app to remote server
+   * Full flow: local build -> package -> upload -> remote deploy
+   */
+  async function deployWebApp({
+    workspace,
+    pm = 'npm',
+    sshConfig,
+    remotePath,
+    target = 'dist',
+    subCommand = 'build'
+  }) {
+    // Use web build operation provided by omniflow
+    const archivePath = await web.build({
+      pm,
+      workDir: workspace,
+      target: subCommand,
+      outputDir: './releases'
+    })
+
+    // Upload to remote server
+    const filename = archivePath.split('/').pop()
+    const remoteTarPath = `/tmp/${filename}`
+    await ssh.scpFile(sshConfig, archivePath, remoteTarPath)
+
+    // Remote extract and deploy
+    await ssh.exec(
+      sshConfig,
+      `mkdir -p ${remotePath} && tar -xzf ${remoteTarPath} -C ${remotePath} && rm ${remoteTarPath}`
+    )
+
+    console.log(`✓ Web app deployment complete`)
+  }
+
+  /**
+   * Docker Compose deployment to remote server
+   */
+  async function deployDockerCompose({
+    workDir,
+    tplFile,
+    sshConfig,
+    remoteDir,
+    preCommands,
+    composeCommands = 'up -d'
+  }) {
+    // Use docker compose operation provided by omniflow
+    await docker.composeOnRemote(
+      sshConfig,
+      remoteDir,
+      tplFile,
+      composeCommands,
+      preCommands
+    )
+  }
+
+  // Return all custom commands
+  return {
+    remoteDeploy,
+    buildAndTar,
+    deployWebApp,
+    deployDockerCompose
   }
 }
-
-/**
- * Remote Deployment
- */
-export async function remoteDeploy({ host, user, remotePath, commands, env = {} }) {
-  const cmdStr = Array.isArray(commands) ? commands.join(' && ') : commands
-  const fullCommand = `cd ${remotePath} && ${cmdStr}`
-  return await sshExec({ host, user, command: fullCommand.trim(), env })
-}
-
-/**
- * Utility Functions
- */
-export const utils = {
-  formatDate: (date = new Date()) => date.toISOString(),
-  buildVersion: (prefix = 'v') => `${prefix}${Date.now()}`,
-  uuid: () => Math.random().toString(36).substring(2, 15),
-  sleep: (ms) => new Promise(resolve => setTimeout(resolve, ms))
-}
-
-// Default export - includes all commands
-export default {
-  sshExec,
-  remoteDeploy,
-  utils
-}
 ```
 
-**Loading Mechanism:**
-- commands.js is loaded centrally by the CLI (`OmniflowConfigLoader.loadCommands()`)
-- Passed to sub-command scripts as `ctx.commands`
-- Supports both named and default exports
+**Usage in project scripts:**
 
-**Usage:**
 ```javascript
-// Use in project deployment scripts
-export default async function pipeline(ctx) {
-  await ctx.commands.sshExec({ host: '192.168.1.5', user: 'deploy', command: 'npm run build' })
-  await ctx.commands.remoteDeploy({ host: 'test.server', user: 'deploy', remotePath: '/opt/app', commands: ['pm2 restart app'] })
+// omniflow/deploy.js
+export default async function pipeline(ctx, folder, appName, args) {
+  // ctx.commands contains custom commands loaded from commands.js
 
-  const version = ctx.commands.utils.buildVersion()
+  // Use custom remoteDeploy command
+  await ctx.commands.remoteDeploy({
+    host: '192.168.1.100',
+    user: 'deploy',
+    privateKeyFile: '~/.ssh/deploy_key',
+    remotePath: '/opt/myapp',
+    command: 'git pull && npm install && pm2 restart app'
+  })
+
+  // Use custom buildAndTar command
+  const { tarPath, version } = await ctx.commands.buildAndTar({
+    workspace: ctx.projectRoot,
+    pm: 'pnpm'
+  })
+
+  console.log(`Build version: ${version}`)
+  console.log(`Archive: ${tarPath}`)
 }
 ```
+
+**Available actions:**
+
+| Action | Description | Methods |
+|--------|-------------|---------|
+| `shell` | Shell command execution | `exec(cmd)` |
+| `git` | Git operations | `clone(opts)` |
+| `node` | Node.js operations | `install`, `build`, `execute`, `getPackageInfo`, `getPackageVersion`, `getPackageName` |
+| `ssh` | SSH/SCP operations | `exec(config, command, remoteDir)`, `scpFile(config, srcFile, targetFile)` |
+| `web` | Web frontend build | `build(opts)` |
+| `docker` | Docker Compose | `compose(workDir, tplFile, commands, preCommands)`, `composeOnRemote(...)` |
+
+**Available utils:**
+
+| Method | Description |
+|--------|-------------|
+| `getPackageVersion({ workspace, subdir })` | Get version from package.json |
+| `templateReplace({ sourceFile, targetFile, variables })` | Replace template variables |
+| `tar({ sourceDir, filename, outputDir })` | Pack directory into tar.gz |
 
 ### 4. Create Configuration Repository
 
@@ -310,10 +436,10 @@ Create `omniflow/deploy.js` in the project repository:
 
 ```javascript
 export default async function pipeline(ctx) {
-  const { git, shell, log } = ctx.actions
+  const { git, shell } = ctx.actions
   const { env, project, environment } = ctx
 
-  await log.info(`Deploying ${project.name} to ${environment.name}`)
+  console.log(`Deploying ${project.name} to ${environment.name}`)
 
   await shell.script({
     script: `
@@ -324,7 +450,7 @@ export default async function pipeline(ctx) {
     `
   })
 
-  await log.success('Deployment complete!')
+  console.log('Deployment complete!')
 }
 ```
 
@@ -370,68 +496,112 @@ omniflow update
 
 ## Script Context
 
-Objects available in deployment scripts:
+Deployment script function signature:
 
 ```javascript
-export default async function pipeline(ctx) {
+/**
+ * Deployment script function
+ * @param {ScriptContext} context - Script context object
+ * @param {string|undefined} folder - Command subdirectory (from command.folder)
+ * @param {string|undefined} appName - Application name (from command.appName)
+ * @param {Object} args - Command arguments (from command.args)
+ */
+export default async function deployScript(context, folder, appName, args) {
+  // Script implementation
+}
+```
+
+**ScriptContext Object Structure:**
+
+```javascript
+{
   // Workspace Info
-  ctx.workspace       // Workspace path
-  ctx.projectRoot     // Project root directory
+  workspace: string,        // Workspace path (~/.omniflow/project/<project-key>)
+  projectRoot: string,      // Project root directory (cloned repo root)
 
   // Project Info
-  ctx.project.key        // 'my-app/platform'
-  ctx.project.name       // 'Platform Service'
-  ctx.project.description // Project description
+  project: string,          // Project name
+  environment: string,      // Environment name ('test' | 'prod' | ...)
 
-  // Environment Info
-  ctx.environment.name      // 'test' - Environment name
-  ctx.environment.config    // Environment configuration object
+  // Actions
+  actions: {
+    shell: { exec(cmd) },        // Shell command execution
+    git: { clone(opts) },        // Git clone operations
+    node: {...},                 // Node.js operations
+    ssh: {...},                  // SSH/SCP operations
+    web: {...},                  // Web frontend build
+    docker: {...}                // Docker Compose operations
+  },
 
-  // Command Info
-  ctx.command.name         // 'frontend-deploy'
-  ctx.command.description  // 'Deploy frontend application'
+  // Utils
+  utils: {
+    getPackageVersion,      // Get package.json version
+    templateReplace,        // Replace template variables
+    tar                     // Pack directory
+  },
 
-  // Git Info
-  ctx.git.url      // Project git repository URL
-  ctx.git.branch   // Current branch
-  ctx.git.commit   // Current commit hash
+  // Merged environment variables (omniflow.env + envConfig.vars)
+  env: {
+    // Merged global and environment variables
+  },
 
-  // Environment Variables
-  ctx.env          // Merged environment variables (global -> folder -> project -> environment)
-
-  // Omniflow Configuration
-  ctx.omniflow     // omniflow section from config.yaml
-
-  // System Actions
-  ctx.actions.log.info(msg)       // Log info message
-  ctx.actions.log.success(msg)    // Log success message
-  ctx.actions.log.error(msg)      // Log error message
-  ctx.actions.shell.exec(cmd)     // Execute shell command
-  ctx.actions.git.clone(opts)     // Clone git repository
-
-  // Utility Functions
-  ctx.utils.getPackageVersion({ workspace, subdir })  // Get version from package.json
-  ctx.utils.templateReplace({ sourceFile, targetFile, variables })  // Replace template variables
-
-  // Shared Commands Library (from commands.js)
-  ctx.commands     // Commands object exported from commands.js
-
-  // System Alias (for backward compatibility)
-  ctx.system       // { WORKSPACE, WORKPLACE, PROJECT_NAME, PACKAGE_VERSION }
+  // Shared commands library (loaded from commands.js)
+  commands: {
+    // Custom commands object returned from commands.js
+  },
 
   // Options
-  ctx.verbose      // Whether verbose output is enabled
+  verbose: boolean         // Whether verbose output is enabled
 }
+```
+
+**actions Details:**
+
+```javascript
+// Shell operations
+ctx.actions.shell.exec('ls -la')
+
+// Git operations
+await ctx.actions.git.clone({
+  url: 'https://github.com/user/repo.git',
+  targetDir: '/path/to/dest',
+  branch: 'main'
+})
+
+// Node.js operations
+await ctx.actions.node.install('/path/to/project', 'pnpm', ['--frozen-lockfile'])
+await ctx.actions.node.build('/path/to/project', 'npm')
+const info = await ctx.actions.node.getPackageInfo('/path/to/project')
+
+// SSH operations
+await ctx.actions.ssh.exec(
+  { host: '192.168.1.100', user: 'deploy', privateKeyFile: '~/.ssh/key' },
+  'ls -la',
+  '/opt/app'  // remoteDir (optional)
+)
+await ctx.actions.ssh.scpFile(
+  { host: '192.168.1.100', user: 'deploy', privateKeyFile: '~/.ssh/key' },
+  './app.tar.gz',
+  '/opt/app/app.tar.gz'
+)
+
+// Web build
+const archivePath = await ctx.actions.web.build({
+  pm: 'npm',
+  workDir: '/path/to/project',
+  target: 'build',
+  outputDir: './releases'
+})
+
+// Docker Compose
+await ctx.actions.docker.compose('/path/to/project', 'docker-compose.yml', 'up -d', 'mkdir -p data')
+```
 ```
 
 ### ctx.actions - System Operations
 
 | Method | Description |
 |--------|-------------|
-| `log.info(msg)` | Log info message |
-| `log.success(msg)` | Log success message |
-| `log.error(msg)` | Log error message |
-| `log.warn(msg)` | Log warning message |
 | `shell.exec(cmd)` | Execute shell command |
 | `git.clone(opts)` | Clone git repository |
 
@@ -508,38 +678,43 @@ const branch2 = ctx.env.BRANCH        // Same as ctx.environment.config.branch
 Variable merge order (latter overrides former):
 
 ```
-omniflow.env (global)
+omniflow.env (global environment variables)
     ↓
-folder.vars (optional)
-    ↓
-project.vars (optional)
-    ↓
-environments[].vars (environment)
+environments[].vars (environment variables)
 ```
 
-Example: `omniflow run app-platform/user-service test`
+**Note:** Variable merging supports deep merge. For object-type variables, only specified properties are overridden while other properties are preserved.
+
+Example:
 
 ```yaml
 omniflow:
   env:
     REGISTRY: docker.example.com    # Global
     NAMESPACE: company
+    deploy_config:                  # Object type
+      timeout: 300
+      retries: 3
 
 projects:
-  - name: app-platform
-    type: folder
-    vars:
-      NAMESPACE: company/app         # Override global
-      DEPLOY_REGION: us-east-1
-    items:
-      - name: user-service
+  - name: user-service
+    environments:
+      - name: test
         vars:
-          DEPLOY_REGION: us-west-2   # Override folder
-          REPLICAS: "3"
-        environments:
-          - name: test
-            vars:
-              REPLICAS: "1"          # Override project
+          DEPLOY_HOST: test.example.com
+          deploy_config:            # Deep merge
+            timeout: 60             # Only override timeout, keep retries: 3
+      - name: prod
+        vars:
+          DEPLOY_HOST: prod.example.com
+```
+
+Final test environment `deploy_config`:
+```javascript
+{
+  timeout: 60,    // Overridden by environment variable
+  retries: 3      // Inherited from global variable
+}
 ```
 
 ## Project Structure
@@ -614,17 +789,27 @@ environments:
 Commands are defined at the project level, shared by all environments:
 
 ```yaml
-- name: platform
-  description: Platform Service
+- name: my-project
+  description: My Project
   repos:
-    git: ${GIT_REPOS}/my-app/platform.git
+    git: ${GIT_REPOS}/my-project.git
   commands:               # Project-level command definitions
     - name: deploy
       description: Deploy application
-      script: ./omniflow/deploy.js    # Script path (relative to project root)
-    - name: rollback
-      description: Rollback version
-      script: ./omniflow/rollback.js
+      script: omniflow/deploy.js    # Script path (relative to project root)
+    - name: build-frontend
+      description: Build frontend
+      folder: frontend              # Command subdirectory
+      script: omniflow/build.js     # Script path (relative to folder)
+      appName: web-app              # Application name (passed to script)
+    - name: deploy-backend
+      description: Deploy backend service
+      folder: backend
+      script: omniflow/deploy.js
+      appName: api-server
+      args:                          # Command-level arguments
+        PORT: "8080"
+        NODE_ENV: production
   environments:
     - name: test
       branch: main-test
@@ -632,10 +817,38 @@ Commands are defined at the project level, shared by all environments:
       branch: main
 ```
 
-**Command script path resolution:**
-1. If `script` field is specified, use that path
-2. If `name` starts with `./`, use that path directly
-3. Default to `./modules/<command-name>` as the path
+**Command Fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Command name, used when executing |
+| `description` | string | No | Command description |
+| `folder` | string | No | Command subdirectory (relative to project root) |
+| `script` | string | Yes | Script path (relative to project root or folder) |
+| `appName` | string | No | Application name, passed to script |
+| `args` | object | No | Command-level arguments, merged into context.env |
+
+**Script Execution:**
+
+```javascript
+// Script receives: (context, folder, appName, args)
+export default async function deployScript(context, folder, appName, args) {
+  console.log('folder:', folder)        // from command.folder
+  console.log('appName:', appName)      // from command.appName
+  console.log('args:', args)            // from command.args
+  console.log('env:', context.env)     // merged environment variables
+
+  // Execute deployment logic
+  // ...
+}
+```
+
+**Script Path Resolution:**
+
+1. If `folder` is specified, base directory is `<projectRoot>/<folder>`
+2. `script` path is relative to base directory
+3. Example: `folder: frontend`, `script: omniflow/build.js`
+   - Full path: `<projectRoot>/frontend/omniflow/build.js`
 
 ### Global Configuration
 

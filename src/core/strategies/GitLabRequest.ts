@@ -4,6 +4,7 @@
  */
 
 import BaseMergeRequest from './BaseMergeRequest.js'
+import type {RepoInfo} from './types.js'
 
 /**
  * Strategy for creating and merging GitLab merge requests
@@ -15,13 +16,60 @@ export default class GitLabRequest extends BaseMergeRequest {
     /**
      * Build GitLab API URL for the repository
      */
-    protected buildApiUrl(repoInfo: any): string {
+    protected buildApiUrl(repoInfo: RepoInfo): string {
         const apiBase = `${repoInfo.serverUrl}/api/v4`
         return `${apiBase}/projects/${encodeURIComponent(`${repoInfo.owner}/${repoInfo.repo}`)}/merge_requests`
     }
 
+    /**
+     * Check if branches have differences using GitLab compare API
+     */
+    async checkBranchesHaveChanges(repoInfo: RepoInfo, source: string, target: string): Promise<{hasChanges: boolean; ahead?: number; behind?: number; diffFiles?: number; commits?: number}> {
+        try {
+            const apiBase = `${repoInfo.serverUrl}/api/v4`
+            const projectId = encodeURIComponent(`${repoInfo.owner}/${repoInfo.repo}`)
+            const compareUrl = `${apiBase}/projects/${projectId}/repository/compare?from=${target}&to=${source}`
+            console.log(`  🔍 Compare URL: ${compareUrl.replace(repoInfo.token, '***')}`)
+
+            const response = await fetch(compareUrl, {
+                headers: { 'PRIVATE-TOKEN': repoInfo.token }
+            })
+
+            if (!response.ok) {
+                console.log(`  ⚠️  API check failed (status ${response.status})`)
+                return { hasChanges: true }
+            }
+
+            const result = await response.json() as any
+            const diffs = result.diffs || []
+            const commits = result.commits || []
+
+            console.log(`  🔍 Comparison: ${diffs.length} files, ${commits.length} commits`)
+
+            if (diffs.length === 0 && commits.length === 0) {
+                return { hasChanges: false, diffFiles: 0, commits: 0 }
+            }
+
+            return {
+                hasChanges: true,
+                diffFiles: diffs.length,
+                commits: commits.length
+            }
+        } catch (error) {
+            console.log(`  ⚠️  Check failed: ${(error as Error).message}`)
+            return { hasChanges: true }
+        }
+    }
+
+    /**
+     * Check if a MR already exists on GitLab
+     * @param repoInfo - Repository information
+     * @param source - Source branch name
+     * @param target - Target branch name
+     * @returns Object indicating if MR exists, with optional MR ID and info
+     */
     protected async checkExists(
-        repoInfo: any,
+        repoInfo: RepoInfo,
         source: string,
         target: string
     ): Promise<{ exists: boolean; id?: string | number; prInfo?: any }> {
@@ -42,8 +90,15 @@ export default class GitLabRequest extends BaseMergeRequest {
         return {exists: false}
     }
 
+    /**
+     * Create a new GitLab MR
+     * @param repoInfo - Repository information
+     * @param source - Source branch name
+     * @param target - Target branch name
+     * @returns Object containing the MR ID (iid)
+     */
     protected async createRequest(
-        repoInfo: any,
+        repoInfo: RepoInfo,
         source: string,
         target: string
     ): Promise<{ id: string | number }> {
@@ -69,8 +124,14 @@ export default class GitLabRequest extends BaseMergeRequest {
         return {id: mr.iid}
     }
 
+    /**
+     * Merge a GitLab MR
+     * @param repoInfo - Repository information
+     * @param id - MR ID (iid)
+     * @param _method - Merge method (unused for GitLab)
+     */
     protected async acceptMergeRequest(
-        repoInfo: any,
+        repoInfo: RepoInfo,
         id: string | number,
         _method: string = 'merge'
     ): Promise<void> {

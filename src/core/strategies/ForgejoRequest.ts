@@ -4,6 +4,7 @@
  */
 
 import BaseMergeRequest from './BaseMergeRequest.js'
+import type {RepoInfo} from './types.js'
 
 /**
  * Strategy for creating and merging Forgejo/Gitea pull requests
@@ -16,17 +17,57 @@ export default class ForgejoRequest extends BaseMergeRequest {
     /**
      * Build Forgejo/Gitea API URL for the repository
      */
-    protected buildApiUrl(repoInfo: any): string {
+    protected buildApiUrl(repoInfo: RepoInfo): string {
         const url = `${repoInfo.serverUrl}/api/v1/repos/${repoInfo.owner}/${repoInfo.repo}/pulls`
         console.log(`  🔍 Debug: API URL = ${url}`)
         return url
     }
 
     /**
+     * Check if branches have differences using Forgejo/Gitea compare API
+     */
+    async checkBranchesHaveChanges(repoInfo: RepoInfo, source: string, target: string): Promise<{hasChanges: boolean; ahead?: number; behind?: number; diffFiles?: number; commits?: number}> {
+        try {
+            const compareUrl = `${repoInfo.serverUrl}/api/v1/repos/${repoInfo.owner}/${repoInfo.repo}/compare/${target}...${source}`
+            console.log(`  🔍 Compare URL: ${compareUrl.replace(repoInfo.token, '***')}`)
+
+            const response = await fetch(compareUrl, {
+                headers: { 'Authorization': `token ${repoInfo.token}` }
+            })
+
+            if (!response.ok) {
+                console.log(`  ⚠️  API check failed (status ${response.status})`)
+                return { hasChanges: true }
+            }
+
+            const result = await response.json() as any
+            const diffFiles = result.diff_files || []
+            const commits = result.commits || []
+
+            console.log(`  🔍 Comparison: ${diffFiles.length} files, ${commits.length} commits`)
+
+            if (diffFiles.length === 0 && commits.length === 0) {
+                return { hasChanges: false, diffFiles: 0, commits: 0 }
+            }
+
+            return {
+                hasChanges: true,
+                ahead: result.ahead || 0,
+                behind: result.behind || 0,
+                diffFiles: diffFiles.length,
+                commits: commits.length
+            }
+        } catch (error) {
+            console.log(`  ⚠️  Check failed: ${(error as Error).message}`)
+            return { hasChanges: true }
+        }
+    }
+
+    /**
      * Check if a PR already exists on Forgejo/Gitea
      */
     protected async checkExists(
-        repoInfo: any,
+        repoInfo: RepoInfo,
         source: string,
         target: string
     ): Promise<{ exists: boolean; id?: string | number; prInfo?: any }> {
@@ -64,7 +105,7 @@ export default class ForgejoRequest extends BaseMergeRequest {
      * Create a new Forgejo/Gitea PR
      */
     protected async createRequest(
-        repoInfo: any,
+        repoInfo: RepoInfo,
         source: string,
         target: string
     ): Promise<{ id: string | number }> {
@@ -105,7 +146,7 @@ export default class ForgejoRequest extends BaseMergeRequest {
      * Merge a Forgejo/Gitea PR
      */
     protected async acceptMergeRequest(
-        repoInfo: any,
+        repoInfo: RepoInfo,
         id: string | number,
         method: string = 'merge'
     ): Promise<void> {
@@ -113,7 +154,7 @@ export default class ForgejoRequest extends BaseMergeRequest {
         const mergeUrl = `${apiUrl}/${id}/merge`
         console.log(`  🔍 Debug: merge URL = ${mergeUrl}`)
 
-        // First, check PR status to see if it's mergeable
+        // Check PR status first
         console.log(`  🔍 Debug: checking PR ${id} status before merge...`)
         const prUrl = `${apiUrl}/${id}`
         const prResponse = await fetch(prUrl, {
@@ -131,20 +172,19 @@ export default class ForgejoRequest extends BaseMergeRequest {
                 return
             }
             if (pr.mergeable === false) {
-                throw new Error(`PR ${id} is not mergeable (conflicts or other issues)`)
+                throw new Error(`PR ${id} is not mergeable`)
             }
         }
 
-        // Try different body formats based on Gitea/Forgejo API versions
+        // Try different body formats
         const bodyFormats = [
-            { do: method },           // Gitea style
-            { Do: method },           // Gitea style (capital D)
-            { merge_method: method }, // GitHub style
-            {}                        // Empty body (use default)
+            { do: method },
+            { Do: method },
+            { merge_method: method },
+            {}
         ]
 
         const httpMethods = ['POST', 'PUT']
-
         let lastError: any = null
 
         for (const httpMethod of httpMethods) {
@@ -161,36 +201,26 @@ export default class ForgejoRequest extends BaseMergeRequest {
                         body: JSON.stringify(body)
                     })
 
-                    console.log(`  🔍 Debug: merge response status = ${response.status}`)
-
                     if (response.ok) {
                         console.log(`  🔍 Debug: merge successful!`)
                         return
                     }
 
                     const errorText = await response.text()
-                    console.log(`  🔍 Debug: merge error = ${errorText}`)
-
-                    // Save error for later
                     lastError = { status: response.status, text: errorText }
 
-                    // If it's a 405, try next format
                     if (response.status === 405 || response.status === 422) {
                         continue
                     }
-
-                    // For other errors, break and try next HTTP method
                     break
-
                 } catch (err) {
-                    console.log(`  🔍 Debug: fetch error = ${(err as Error).message}`)
                     lastError = err
                 }
             }
         }
 
         if (lastError) {
-            throw new Error(`Failed to merge PR ${id}: ${JSON.stringify(lastError)}`)
+            throw new Error(`Failed to merge PR ${id}`)
         }
     }
 }

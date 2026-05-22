@@ -11,17 +11,13 @@ import type { GitProjectConfig, EnvironmentConfig, OmniflowConfig } from '../typ
  * @param projectPath Project path like "omni-gate/platform"
  * @param envName Environment name like "test" or "prod"
  */
-export function getGitConfig(
-  config: OmniflowConfig,
-  projectPath: string,
-  envName?: string
-): {
+export function getGitConfig(config: OmniflowConfig, projectPath: string, envName?: string): {
   url: string
   branch: string
   username?: string
   password?: string
   merge_from?: string
-  strategy?: string
+  strategy: string
 } | null {
   // Find project by path
   const pathParts = projectPath.split('/')
@@ -63,7 +59,10 @@ export function getGitConfig(
   // Strategy comes from: project repos -> omniflow.env -> process.env
   const strategy = projectRepos?.merge_strategy ||
                    config.omniflow.env?.GIT_MERGE_STRATEGY ||
-                   process.env.GIT_MERGE_STRATEGY
+                   process.env.GIT_MERGE_STRATEGY;
+  if (!strategy) {
+      throw new Error("Missing environment environment variable strategy")
+  }
 
   // Merge configuration (project takes precedence)
   return {

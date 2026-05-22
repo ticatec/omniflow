@@ -26,7 +26,7 @@ OMNIFLOW_CONFIG_REPO (环境变量) → 配置仓库地址
 - **文件夹嵌套** - 支持项目分组，任意层次嵌套
 - **环境分离** - 支持多环境配置
 - **分支合并流程** - 定义环境间的分支合并策略
-- **简洁 Actions** - git, shell, log 三个核心操作
+- **简洁 Actions** - git, shell 核心操作
 - **命令列表** - 配置中定义可用的部署命令
 
 ## 安装
@@ -147,77 +147,203 @@ config.git/
 
 ### 3. 创建公共命令库（可选）
 
-在配置仓库中创建 `commands.js`，定义可被所有项目使用的公共命令：
+在配置仓库中创建 `commands.js`，定义可被所有项目使用的公共命令。
+
+**文件格式要求：**
+- 必须导出一个默认函数 `export default function loadCommands(actions, utils)`
+- 函数接收 omniflow 提供的 `actions` 和 `utils` 作为参数
+- 函数返回一个包含自定义命令的对象
+
+**完整示例：**
 
 ```javascript
 /**
  * Omniflow 公共命令库
  * 位置：配置仓库根目录 (与 config.yaml 同级)
+ *
+ * 必须导出默认函数：
+ * export default function loadCommands(actions, utils) { return {...} }
  */
-
-import { $ } from 'zx'
 
 /**
- * SSH 远程执行命令
+ * loadCommands - omniflow 加载命令的入口函数
+ * @param {Object} actions - omniflow 提供的核心操作
+ * @param {Object} utils - omniflow 提供的工具函数
+ * @returns {Object} 自定义命令对象
+ *
+ * actions 包含:
+ *   - shell: { exec(cmd) } - shell 命令执行
+ *   - git: { clone(opts) } - git 操作
+ *   - node: { install, build, execute, getPackageInfo, ... } - Node.js 操作
+ *   - ssh: { exec, scpFile } - SSH/SCP 操作
+ *   - web: { build(opts) } - Web 前端构建
+ *   - docker: { compose, composeOnRemote } - Docker Compose 操作
+ *
+ * utils 包含:
+ *   - getPackageVersion({ workspace, subdir })
+ *   - templateReplace({ sourceFile, targetFile, variables })
+ *   - tar({ sourceDir, filename, outputDir })
  */
-export async function sshExec({ host, user, command, env = {}, port = 22 }) {
-  const envStr = Object.entries(env)
-    .map(([k, v]) => `export ${k}="${v}"`)
-    .join(' ')
+export default function loadCommands(actions, utils) {
+  const { ssh, node, web, docker } = actions
 
-  const fullCommand = envStr ? `${envStr}; ${command}` : command
-  const sshCmd = `ssh -o StrictHostKeyChecking=no -p ${port} ${user}@${host} "${fullCommand.replace(/"/g, '\\"')}"`
+  /**
+   * 远程部署应用
+   * 使用 SSH 在远程服务器执行部署命令
+   */
+  async function remoteDeploy({ host, user, privateKeyFile, remotePath, command, port = 22 }) {
+    console.log(`🚀 部署到 ${user}@${host}:${remotePath}`)
 
-  try {
-    const result = await $`sh -c ${sshCmd}`
-    return { success: true, stdout: result.stdout, stderr: result.stderr }
-  } catch (error) {
-    return { success: false, stdout: error.stdout || '', stderr: error.stderr || '', error: error.message }
+    // 使用 omniflow 提供的 ssh 操作
+    const result = await ssh.exec(
+      { host, user, privateKeyFile, port },
+      `cd ${remotePath} && ${command}`
+    )
+
+    if (result.exitCode !== 0) {
+      throw new Error(`部署失败: ${result.stderr}`)
+    }
+
+    console.log(`✓ 部署成功`)
+    return result.stdout
+  }
+
+  /**
+   * 构建 Node.js 应用并打包
+   * 使用 omniflow 提供的 node 操作
+   */
+  async function buildAndTar({ workspace, pm = 'pnpm', target = 'build', outputDir = './releases' }) {
+    // 安装依赖
+    await node.install(workspace, pm)
+
+    // 构建
+    await node.build(workspace, pm)
+
+    // 获取版本信息
+    const pkgInfo = await node.getPackageInfo(workspace)
+    const filename = `${pkgInfo.name}-${pkgInfo.version}`
+
+    // 打包 (使用 omniflow 提供的 tar 工具)
+    const tarPath = await utils.tar({
+      sourceDir: `${workspace}/${target}`,
+      filename,
+      outputDir
+    })
+
+    console.log(`✓ 构建完成: ${tarPath}`)
+    return { tarPath, version: pkgInfo.version }
+  }
+
+  /**
+   * 部署 Web 应用到远程服务器
+   * 完整流程：本地构建 -> 打包 -> 上传 -> 远程部署
+   */
+  async function deployWebApp({
+    workspace,
+    pm = 'npm',
+    sshConfig,
+    remotePath,
+    target = 'dist',
+    subCommand = 'build'
+  }) {
+    // 使用 omniflow 提供的 web 构建操作
+    const archivePath = await web.build({
+      pm,
+      workDir: workspace,
+      target: subCommand,
+      outputDir: './releases'
+    })
+
+    // 上传到远程服务器
+    const filename = archivePath.split('/').pop()
+    const remoteTarPath = `/tmp/${filename}`
+    await ssh.scpFile(sshConfig, archivePath, remoteTarPath)
+
+    // 远程解压并部署
+    await ssh.exec(
+      sshConfig,
+      `mkdir -p ${remotePath} && tar -xzf ${remoteTarPath} -C ${remotePath} && rm ${remoteTarPath}`
+    )
+
+    console.log(`✓ Web 应用部署完成`)
+  }
+
+  /**
+   * Docker Compose 部署到远程服务器
+   */
+  async function deployDockerCompose({
+    workDir,
+    tplFile,
+    sshConfig,
+    remoteDir,
+    preCommands,
+    composeCommands = 'up -d'
+  }) {
+    // 使用 omniflow 提供的 docker compose 操作
+    await docker.composeOnRemote(
+      sshConfig,
+      remoteDir,
+      tplFile,
+      composeCommands,
+      preCommands
+    )
+  }
+
+  // 返回所有自定义命令
+  return {
+    remoteDeploy,
+    buildAndTar,
+    deployWebApp,
+    deployDockerCompose
   }
 }
-
-/**
- * 远程部署
- */
-export async function remoteDeploy({ host, user, remotePath, commands, env = {} }) {
-  const cmdStr = Array.isArray(commands) ? commands.join(' && ') : commands
-  const fullCommand = `cd ${remotePath} && ${cmdStr}`
-  return await sshExec({ host, user, command: fullCommand.trim(), env })
-}
-
-/**
- * 工具函数集合
- */
-export const utils = {
-  formatDate: (date = new Date()) => date.toISOString(),
-  buildVersion: (prefix = 'v') => `${prefix}${Date.now()}`,
-  uuid: () => Math.random().toString(36).substring(2, 15),
-  sleep: (ms) => new Promise(resolve => setTimeout(resolve, ms))
-}
-
-// 默认导出 - 包含所有命令
-export default {
-  sshExec,
-  remoteDeploy,
-  utils
-}
 ```
 
-**加载机制：**
-- commands.js 在 CLI 统一加载（`OmniflowConfigLoader.loadCommands()`）
-- 作为 `ctx.commands` 传递给子命令脚本
-- 支持命名导出和默认导出
+**在项目脚本中使用：**
 
-**使用方式：**
 ```javascript
-// 在项目部署脚本中使用
-export default async function pipeline(ctx) {
-  await ctx.commands.sshExec({ host: '192.168.1.5', user: 'deploy', command: 'npm run build' })
-  await ctx.commands.remoteDeploy({ host: 'test.server', user: 'deploy', remotePath: '/opt/app', commands: ['pm2 restart app'] })
-  
-  const version = ctx.commands.utils.buildVersion()
+// omniflow/deploy.js
+export default async function pipeline(ctx, folder, appName, args) {
+  // ctx.commands 包含从 commands.js 加载的自定义命令
+
+  // 使用自定义的 remoteDeploy 命令
+  await ctx.commands.remoteDeploy({
+    host: '192.168.1.100',
+    user: 'deploy',
+    privateKeyFile: '~/.ssh/deploy_key',
+    remotePath: '/opt/myapp',
+    command: 'git pull && npm install && pm2 restart app'
+  })
+
+  // 使用自定义的 buildAndTar 命令
+  const { tarPath, version } = await ctx.commands.buildAndTar({
+    workspace: ctx.projectRoot,
+    pm: 'pnpm'
+  })
+
+  console.log(`构建版本: ${version}`)
+  console.log(`归档文件: ${tarPath}`)
 }
 ```
+
+**可用的 actions：**
+
+| 操作 | 说明 | 方法 |
+|------|------|------|
+| `shell` | Shell 命令执行 | `exec(cmd)` |
+| `git` | Git 操作 | `clone(opts)` |
+| `node` | Node.js 操作 | `install`, `build`, `execute`, `getPackageInfo`, `getPackageVersion`, `getPackageName` |
+| `ssh` | SSH/SCP 操作 | `exec(config, command, remoteDir)`, `scpFile(config, srcFile, targetFile)` |
+| `web` | Web 前端构建 | `build(opts)` |
+| `docker` | Docker Compose | `compose(workDir, tplFile, commands, preCommands)`, `composeOnRemote(...)` |
+
+**可用的 utils：**
+
+| 方法 | 说明 |
+|------|------|
+| `getPackageVersion({ workspace, subdir })` | 获取 package.json 版本 |
+| `templateReplace({ sourceFile, targetFile, variables })` | 替换模板变量 |
+| `tar({ sourceDir, filename, outputDir })` | 打包目录为 tar.gz |
 
 ### 4. 编辑配置文件
 
@@ -321,10 +447,10 @@ projects:
 
 ```javascript
 export default async function pipeline(ctx) {
-  const { git, shell, log } = ctx.actions
+  const { git, shell } = ctx.actions
   const { env, globals, secrets, system } = ctx
 
-  await log.info(`部署 ${system.PROJECT_NAME} v${system.PACKAGE_VERSION}`)
+  console.log(`部署 ${system.PROJECT_NAME} v${system.PACKAGE_VERSION}`)
 
   await shell.script({
     script: `
@@ -335,7 +461,7 @@ export default async function pipeline(ctx) {
     `
   })
 
-  await log.success('部署完成!')
+  console.log('部署完成!')
 }
 ```
 
@@ -381,70 +507,267 @@ omniflow update
 
 ## 脚本上下文
 
-部署脚本中可用的对象：
+部署脚本接收的参数：
 
 ```javascript
-export default async function pipeline(ctx) {
+/**
+ * 部署脚本函数签名
+ * @param {ScriptContext} context - 脚本上下文对象
+ * @param {string|undefined} folder - 命令所在子目录（来自 command.folder）
+ * @param {string|undefined} appName - 应用名称（来自 command.appName）
+ * @param {Object} args - 命令参数（来自 command.args）
+ */
+export default async function deployScript(context, folder, appName, args) {
+  // 脚本实现
+}
+```
+
+**ScriptContext 对象结构：**
+
+```javascript
+{
   // 工作区信息
-  ctx.workspace       // 工作区路径
-  ctx.projectRoot     // 项目根目录
+  workspace: string,        // 工作区路径 (~/.omniflow/project/<project-key>)
+  projectRoot: string,      // 项目根目录（克隆的仓库根目录）
 
   // 项目信息
-  ctx.project.key     // 'my-app/platform'
-  ctx.project.name    // '平台服务'
-  ctx.project.description  // 项目描述
+  project: string,          // 项目名称
+  environment: string,      // 环境名称 ('test' | 'prod' | ...)
 
-  // 环境信息
-  ctx.environment.name      // 'test'
-  ctx.environment.config    // 环境配置对象
-
-  // 命令信息
-  ctx.command.name         // 'frontend-deploy'
-  ctx.command.description  // '部署前端应用'
-
-  // Git 信息
-  ctx.git.url      // 项目 git 仓库地址
-  ctx.git.branch   // 当前分支
-  ctx.git.commit   // 当前 commit hash
-
-  // 环境变量
-  ctx.env          // 合并后的环境变量 (global -> folder -> project -> environment)
-
-  // Omniflow 配置
-  ctx.omniflow     // config.yaml 中的 omniflow 配置
-
-  // 系统操作 (actions)
-  ctx.actions.log.info(msg)       // 输出信息
-  ctx.actions.log.success(msg)    // 输出成功信息
-  ctx.actions.log.error(msg)      // 输出错误信息
-  ctx.actions.shell.exec(cmd)     // 执行 shell 命令
-  ctx.actions.git.clone(opts)     // 克隆 git 仓库
+  // 操作 (actions)
+  actions: {
+    shell: { exec(cmd) },        // Shell 命令执行
+    git: { clone(opts) },        // Git 克隆操作
+    node: {...},                 // Node.js 操作
+    ssh: {...},                  // SSH/SCP 操作
+    web: {...},                  // Web 前端构建
+    docker: {...}                // Docker Compose 操作
+  },
 
   // 工具函数 (utils)
-  ctx.utils.getPackageVersion({ workspace, subdir })  // 获取 package.json 版本
-  ctx.utils.templateReplace({ sourceFile, targetFile, variables })  // 替换模板变量
+  utils: {
+    getPackageVersion,      // 获取 package.json 版本
+    templateReplace,        // 替换模板变量
+    tar                     // 打包目录
+  },
+
+  // 合并的环境变量 (omniflow.env + envConfig.vars)
+  env: {
+    // 全局和环境变量合并后的对象
+  },
 
   // 公共命令库 (从 commands.js 加载)
-  ctx.commands     // commands.js 导出的命令对象
-
-  // 系统别名 (向后兼容)
-  ctx.system       // { WORKSPACE, WORKPLACE, PROJECT_NAME, PACKAGE_VERSION }
+  commands: {
+    // commands.js 返回的自定义命令对象
+  },
 
   // 选项
-  ctx.verbose      // 是否启用详细输出
+  verbose: boolean         // 是否启用详细输出
 }
+```
+
+**actions 详细说明：**
+
+```javascript
+// Shell 操作
+ctx.actions.shell.exec('ls -la')
+
+// Git 操作
+await ctx.actions.git.clone({
+  url: 'https://github.com/user/repo.git',
+  targetDir: '/path/to/dest',
+  branch: 'main'
+})
+
+// Node.js 操作
+await ctx.actions.node.install('/path/to/project', 'pnpm', ['--frozen-lockfile'])
+await ctx.actions.node.build('/path/to/project', 'npm')
+const info = await ctx.actions.node.getPackageInfo('/path/to/project')
+
+// SSH 操作
+await ctx.actions.ssh.exec(
+  { host: '192.168.1.100', user: 'deploy', privateKeyFile: '~/.ssh/key' },
+  'ls -la',
+  '/opt/app'  // remoteDir (可选)
+)
+await ctx.actions.ssh.scpFile(
+  { host: '192.168.1.100', user: 'deploy', privateKeyFile: '~/.ssh/key' },
+  './app.tar.gz',
+  '/opt/app/app.tar.gz'
+)
+
+// Web 构建
+const archivePath = await ctx.actions.web.build({
+  pm: 'npm',
+  workDir: '/path/to/project',
+  target: 'build',
+  outputDir: './releases'
+})
+
+// Docker Compose
+await ctx.actions.docker.compose('/path/to/project', 'docker-compose.yml', 'up -d', 'mkdir -p data')
+```
 ```
 
 ### ctx.actions - 系统操作
 
 | 方法 | 说明 |
 |------|------|
-| `log.info(msg)` | 输出信息日志 |
-| `log.success(msg)` | 输出成功日志 |
-| `log.error(msg)` | 输出错误日志 |
-| `log.warn(msg)` | 输出警告日志 |
 | `shell.exec(cmd)` | 执行 shell 命令 |
 | `git.clone(opts)` | 克隆 git 仓库 |
+| `node.*` | Node.js 操作（见下文） |
+| `ssh.*` | SSH/SCP 操作（见下文） |
+| `web.*` | Web 前端构建（见下文） |
+| `docker.*` | Docker Compose 操作（见下文） |
+
+### ctx.actions.node - Node.js 操作
+
+| 方法 | 说明 |
+|------|------|
+| `node.getPackageVersion(packageDir)` | 获取 package.json 版本 |
+| `node.getPackageName(packageDir)` | 获取 package.json 名称 |
+| `node.getPackageInfo(packageDir)` | 获取名称和版本 |
+| `node.install(packageDir, pm, flags)` | 安装依赖 |
+| `node.build(packageDir, pm, flags)` | 构建项目 |
+| `node.execute(packageDir, pm, command, flags)` | 执行 npm 脚本 |
+
+**使用示例：**
+
+```javascript
+// 获取包信息
+const info = await ctx.actions.node.getPackageInfo(ctx.projectRoot)
+console.log(`${info.name}@${info.version}`)
+
+// 安装依赖
+await ctx.actions.node.install(ctx.projectRoot, 'pnpm', ['--frozen-lockfile'])
+
+// 构建
+await ctx.actions.node.build(ctx.projectRoot, 'pnpm')
+
+// 执行自定义命令
+await ctx.actions.node.execute(ctx.projectRoot, 'pnpm', 'test', ['--coverage'])
+```
+
+### ctx.actions.ssh - SSH/SCP 操作
+
+| 方法 | 说明 |
+|------|------|
+| `ssh.exec(sshConfig, command, remoteDir)` | 在远程服务器执行命令 |
+| `ssh.scpFile(sshConfig, srcFile, targetFile)` | 复制文件到远程服务器 |
+
+**sshConfig 结构：**
+
+```typescript
+interface SshConnectionConfig {
+  host: string           // 主机地址
+  user: string           // 用户名
+  port?: number          // 端口，默认 22
+  password?: string      // 密码（可选）
+  privateKey?: string    // 私钥内容（可选）
+  privateKeyFile?: string // 私钥文件路径（可选）
+}
+```
+
+**使用示例：**
+
+```javascript
+// 执行远程命令
+const result = await ctx.actions.ssh.exec(
+  { host: '192.168.1.100', user: 'deploy', privateKeyFile: '~/.ssh/id_rsa' },
+  'ls -la',
+  '/opt/app'  // remoteDir（可选）
+)
+console.log(result.stdout)
+
+// 复制文件到远程
+await ctx.actions.ssh.scpFile(
+  { host: '192.168.1.100', user: 'deploy', privateKeyFile: '~/.ssh/id_rsa' },
+  './app.tar.gz',
+  '/opt/app/app.tar.gz'
+)
+```
+
+### ctx.actions.web - Web 前端构建
+
+| 方法 | 说明 |
+|------|------|
+| `web.build(opts)` | 构建前端应用并打包 |
+
+**build 参数：**
+
+```typescript
+interface WebBuildOptions {
+  pm: 'npm' | 'pnpm' | 'yarn' | 'bun'  // 包管理器
+  workDir: string                       // 工作目录
+  target: string                        // 构建命令（如 'build'）
+  outputDir: string                     // 输出目录
+  suffix?: string                       // 文件名后缀（可选）
+  subdir?: string                       // 子目录（可选）
+  installFlags?: string[]               // 安装标志（可选）
+  buildFlags?: string[]                 // 构建标志（可选）
+}
+```
+
+**使用示例：**
+
+```javascript
+const archivePath = await ctx.actions.web.build({
+  pm: 'npm',
+  workDir: ctx.projectRoot,
+  target: 'build',
+  outputDir: './releases'
+})
+// 返回打包文件路径，如: ./releases/myapp-1.0.0.tar.gz
+```
+
+### ctx.actions.docker - Docker Compose 操作
+
+| 方法 | 说明 |
+|------|------|
+| `docker.compose(workDir, tplFile, commands, preCommands)` | 本地 Docker Compose |
+| `docker.composeOnRemote(sshConfig, targetDir, tplFile, commands, preCommands)` | 远程 Docker Compose |
+
+**使用示例：**
+
+```javascript
+// 本地 docker-compose
+await ctx.actions.docker.compose(
+  '/path/to/project',
+  'docker-compose.yml',
+  'up -d',           // docker-compose 命令
+  'mkdir -p data'    // 预处理命令（可选）
+)
+
+// 远程 docker-compose
+await ctx.actions.docker.composeOnRemote(
+  { host: '192.168.1.100', user: 'deploy', privateKeyFile: '~/.ssh/key' },
+  '/opt/app',
+  'docker-compose.yml',
+  'up -d --build'
+)
+console.log(`${info.name}@${info.version}`)
+
+// 安装依赖
+await ctx.actions.node.install({
+  workspace: ctx.projectRoot,
+  pm: 'pnpm',
+  flags: ['--frozen-lockfile']
+})
+
+// 构建
+await ctx.actions.node.build({
+  workspace: ctx.projectRoot,
+  pm: 'pnpm'
+})
+
+// 执行自定义命令
+await ctx.actions.node.execute({
+  workspace: ctx.projectRoot,
+  pm: 'pnpm',
+  command: 'test',
+  flags: ['--coverage']
+})
+```
 
 ### ctx.utils - 工具函数
 
@@ -452,6 +775,7 @@ export default async function pipeline(ctx) {
 |------|------|
 | `getPackageVersion({ workspace, subdir })` | 获取 package.json 中的版本号 |
 | `templateReplace({ sourceFile, targetFile, variables })` | 替换模板文件中的变量 |
+| `tar({ sourceDir, filename, outputDir, zip })` | 打包目录为 tar 或 tar.gz |
 
 **使用示例：**
 
@@ -472,6 +796,23 @@ await ctx.utils.templateReplace({
     PORT: '3000'
   }
 })
+
+// 打包为 tar.gz (默认)
+await ctx.utils.tar({
+  sourceDir: './dist',
+  filename: 'my-app-1.0.0',
+  outputDir: './releases'
+})
+// 生成: ./releases/my-app-1.0.0.tar.gz
+
+// 打包为 tar (不压缩)
+await ctx.utils.tar({
+  sourceDir: './dist',
+  filename: 'my-app-1.0.0',
+  outputDir: './releases',
+  zip: false
+})
+// 生成: ./releases/my-app-1.0.0.tar
 ```
 
 ### ctx.environment - 环境属性
@@ -519,38 +860,43 @@ const branch2 = ctx.env.BRANCH        // 同 ctx.environment.config.branch
 变量合并顺序（后者覆盖前者）：
 
 ```
-omniflow.env (全局)
+omniflow.env (全局环境变量)
     ↓
-分组.vars (folder，可选)
-    ↓
-项目.vars (project，可选)
-    ↓
-environments[].vars (环境)
+environments[].vars (环境变量)
 ```
 
-示例：`omniflow run app-platform/user-service test`
+**注意：** 变量合并支持深度合并。对于对象类型的变量，只会覆盖指定的属性，不会丢失其他属性。
+
+示例：
 
 ```yaml
 omniflow:
   env:
     REGISTRY: docker.example.com    # 全局
     NAMESPACE: company
+    deploy_config:                  # 对象类型
+      timeout: 300
+      retries: 3
 
 projects:
-  - name: app-platform
-    type: folder
-    vars:
-      NAMESPACE: company/app         # 覆盖全局
-      DEPLOY_REGION: us-east-1
-    items:
-      - name: user-service
+  - name: user-service
+    environments:
+      - name: test
         vars:
-          DEPLOY_REGION: us-west-2   # 覆盖分组
-          REPLICAS: "3"
-        environments:
-          - name: test
-            vars:
-              REPLICAS: "1"          # 覆盖项目
+          DEPLOY_HOST: test.example.com
+          deploy_config:            # 深度合并
+            timeout: 60             # 只覆盖 timeout，保留 retries: 3
+      - name: prod
+        vars:
+          DEPLOY_HOST: prod.example.com
+```
+
+最终 test 环境的 `deploy_config` 为：
+```javascript
+{
+  timeout: 60,    // 被环境变量覆盖
+  retries: 3      // 从全局变量继承
+}
 ```
 
 ## 项目结构
@@ -625,20 +971,66 @@ environments:
 命令定义在项目级别，所有环境共享相同的命令列表：
 
 ```yaml
-- name: platform
-  description: 平台服务
+- name: my-project
+  description: 我的项目
   repos:
-    git: ${GIT_REPOS}/my-app/platform.git
+    git: ${GIT_REPOS}/my-project.git
   commands:               # 项目级别的命令定义
     - name: deploy
       description: 部署应用
-      script: ./omniflow/deploy.js    # 脚本路径（相对于项目根目录）
-    - name: rollback
-      description: 回滚版本
-      script: ./omniflow/rollback.js
+      script: omniflow/deploy.js    # 脚本路径（相对于项目根目录）
+    - name: build-frontend
+      description: 构建前端
+      folder: frontend              # 命令所在子目录
+      script: omniflow/build.js     # 脚本路径（相对于 folder 目录）
+      appName: web-app              # 应用名称（传递给脚本）
+    - name: deploy-backend
+      description: 部署后端服务
+      folder: backend
+      script: omniflow/deploy.js
+      appName: api-server
+      args:                          # 命令级别参数
+        PORT: "8080"
+        NODE_ENV: production
   environments:
     - name: test
       branch: main-test
+    - name: prod
+      branch: main
+```
+
+**命令字段说明：**
+
+| 字段 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| `name` | string | 是 | 命令名称，用于执行时指定 |
+| `description` | string | 否 | 命令描述 |
+| `folder` | string | 否 | 命令所在子目录（相对于项目根目录） |
+| `script` | string | 是 | 脚本路径（相对于项目根目录或 folder 目录） |
+| `appName` | string | 否 | 应用名称，传递给脚本 |
+| `args` | object | 否 | 命令级别参数，合并到 context.env 中 |
+
+**脚本执行：**
+
+```javascript
+// 脚本接收参数: (context, folder, appName, args)
+export default async function deployScript(context, folder, appName, args) {
+  console.log('folder:', folder)        // 来自 command.folder
+  console.log('appName:', appName)      // 来自 command.appName
+  console.log('args:', args)            // 来自 command.args
+  console.log('env:', context.env)     // 合并后的环境变量
+
+  // 执行部署逻辑
+  // ...
+}
+```
+
+**脚本路径解析：**
+
+1. 如果指定了 `folder`，脚本基础目录为 `<projectRoot>/<folder>`
+2. `script` 路径相对于基础目录
+3. 例如：`folder: frontend`, `script: omniflow/build.js`
+   - 完整路径：`<projectRoot>/frontend/omniflow/build.js`
     - name: prod
       branch: main
 ```

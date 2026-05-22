@@ -3,7 +3,7 @@
  * Implements template method pattern to eliminate code duplication
  */
 
-import type {MergeRequestStrategy} from './types.js'
+import type {MergeRequestStrategy, RepoInfo, BranchDiffResult} from './types.js'
 
 /**
  * Abstract base class for merge request strategies
@@ -14,37 +14,100 @@ export default abstract class BaseMergeRequest implements MergeRequestStrategy {
     protected abstract readonly idPrefix: string  // '#' for PR, '!' for MR
 
     /**
+     * Parse repository URL to extract repo info
+     * Default implementation handles standard http/https Git URLs
+     */
+    parseUrl(url: string): RepoInfo | null {
+        try {
+            // Only http/https URLs are supported
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                console.log(`  ⚠️  Only http/https URLs are supported, got: ${url}`)
+                return null
+            }
+
+            const urlObj = new URL(url)
+            const pathParts = urlObj.pathname.split('/').filter(p => p)
+
+            if (pathParts.length < 2) {
+                console.log(`  ⚠️  Invalid URL structure, expected /owner/repo.git`)
+                return null
+            }
+
+            const repo = pathParts[pathParts.length - 1].replace(/\.git$/, '')
+            const owner = pathParts[pathParts.length - 2]
+            const platform = urlObj.hostname
+            const serverUrl = `${urlObj.protocol}//${platform}`
+
+            return { platform, owner, repo, serverUrl, token: '' }
+        } catch (error) {
+            console.log(`  ⚠️  Failed to parse URL: ${(error as Error).message}`)
+            return null
+        }
+    }
+
+    /**
+     * Check if two branches have differences via API
+     * Default implementation using Forgejo/Gitea API
+     */
+    async checkBranchesHaveChanges(repoInfo: RepoInfo, source: string, target: string): Promise<BranchDiffResult> {
+        try {
+            const compareUrl = `${repoInfo.serverUrl}/api/v1/repos/${repoInfo.owner}/${repoInfo.repo}/compare/${target}...${source}`
+
+            const response = await fetch(compareUrl, {
+                headers: { 'Authorization': `token ${repoInfo.token}` }
+            })
+
+            if (!response.ok) {
+                console.log(`  ⚠️  API check failed (status ${response.status}), assuming changes exist`)
+                return { hasChanges: true }
+            }
+
+            const result = await response.json() as any
+            const diffFiles = result.diff_files || []
+            const commits = result.commits || []
+
+            console.log(`  🔍 Comparison: ${diffFiles.length} files, ${commits.length} commits`)
+
+            if (diffFiles.length === 0 && commits.length === 0) {
+                return { hasChanges: false, diffFiles: 0, commits: 0 }
+            }
+
+            return {
+                hasChanges: true,
+                ahead: result.ahead || 0,
+                behind: result.behind || 0,
+                diffFiles: diffFiles.length,
+                commits: commits.length
+            }
+        } catch (error) {
+            console.log(`  ⚠️  Check failed: ${(error as Error).message}`)
+            return { hasChanges: true }
+        }
+    }
+
+    /**
      * Check if a pull/merge request already exists
-     * @param repoInfo - Repository info
-     * @param source - Source branch name
-     * @param target - Target branch name
      */
     protected abstract checkExists(
-        repoInfo: any,
+        repoInfo: RepoInfo,
         source: string,
         target: string
     ): Promise<{ exists: boolean; id?: string | number; prInfo?: any }>
 
     /**
      * Create a new pull/merge request
-     * @param repoInfo - Repository info
-     * @param source - Source branch name
-     * @param target - Target branch name
      */
     protected abstract createRequest(
-        repoInfo: any,
+        repoInfo: RepoInfo,
         source: string,
         target: string
     ): Promise<{ id: string | number }>
 
     /**
      * Accept and merge a PR/MR
-     * @param repoInfo - Repository info
-     * @param id - PR/MR ID
-     * @param method - Merge method: 'merge', 'squash', or 'rebase'
      */
     protected abstract acceptMergeRequest(
-        repoInfo: any,
+        repoInfo: RepoInfo,
         id: string | number,
         method?: string
     ): Promise<void>
@@ -72,14 +135,12 @@ export default abstract class BaseMergeRequest implements MergeRequestStrategy {
 
     /**
      * Create a merge request and auto-merge it (template method)
-     * @param repoInfo - Repository info { platform, owner, repo, serverUrl, token }
-     * @param source - Source branch name
-     * @param target - Target branch name
      */
     async create(
-        repoInfo: any,
+        repoInfo: RepoInfo,
         source: string,
-        target: string
+        target: string,
+        mergeMethod?: string
     ): Promise<void> {
         try {
             let mrId: string | number
@@ -105,7 +166,6 @@ export default abstract class BaseMergeRequest implements MergeRequestStrategy {
             }
 
             // If PR was just created, wait a bit before attempting merge
-            // This gives Forgejo/Gitea time to process the PR
             if (isPrNewlyCreated) {
                 console.log(`  ⏳ Waiting 3 seconds for PR to be processed...`)
                 await this.sleep(3000)
@@ -117,7 +177,7 @@ export default abstract class BaseMergeRequest implements MergeRequestStrategy {
             for (let attempt = 1; attempt <= maxRetries; attempt++) {
                 try {
                     console.log(`  🔍 Debug: merge attempt ${attempt}/${maxRetries}`)
-                    await this.acceptMergeRequest(repoInfo, mrId)
+                    await this.acceptMergeRequest(repoInfo, mrId, mergeMethod)
                     console.log(this.formatMergedMessage(mrId))
                     merged = true
                     break
@@ -126,7 +186,7 @@ export default abstract class BaseMergeRequest implements MergeRequestStrategy {
                     console.log(`  ⚠️  Merge attempt ${attempt} failed: ${err.message}`)
 
                     if (attempt < maxRetries) {
-                        const waitTime = attempt * 2000  // 2s, 4s, 6s
+                        const waitTime = attempt * 2000
                         console.log(`  ⏳ Waiting ${waitTime / 1000}s before retry...`)
                         await this.sleep(waitTime)
                     } else {
