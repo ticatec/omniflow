@@ -25,7 +25,7 @@
 
 import * as path from 'path';
 import {promises as fs} from 'fs';
-import {$} from 'zx';
+import {$} from './shell.js';
 
 /**
  * Supported package managers
@@ -103,11 +103,8 @@ async function getPackageInfo(packageDir: string): Promise<{ name: string; versi
  * ```
  */
 async function install(packageDir: string, pm: 'npm' | 'pnpm' | 'yarn' | 'bun', flags: string[] = []): Promise<void> {
-    const cmd = `${pm} install`;
-    const flagStr = flags.length > 0 ? flags.join(' ') : '';
-
     console.log(`  📦 Installing node modules with ${pm}...`);
-    await $`cd ${packageDir} && ${cmd} ${flagStr}`;
+    await $`cd ${packageDir} && ${pm} install ${flags}`;
     console.log(`  ✓ Node modules installed`);
 }
 
@@ -125,12 +122,9 @@ async function install(packageDir: string, pm: 'npm' | 'pnpm' | 'yarn' | 'bun', 
  * ```
  */
 async function build(packageDir: string, pm: 'npm' | 'pnpm' | 'yarn' | 'bun', flags: string[] = []): Promise<void> {
-    const command = 'build';
-    const flagStr = flags.length > 0 ? flags.join(' ') : '';
-
-    console.log(`  🔨 Building with ${pm} run ${command}...`);
-    await $`cd ${packageDir} && ${pm} run ${command} ${flagStr}`;
-    console.log(`  ✓ run ${command} completed`);
+    console.log(`  🔨 Building with ${pm} run build...`);
+    await $`cd ${packageDir} && ${pm} run build ${flags}`;
+    console.log(`  ✓ run build completed`);
 }
 
 /**
@@ -150,10 +144,8 @@ async function build(packageDir: string, pm: 'npm' | 'pnpm' | 'yarn' | 'bun', fl
  * ```
  */
 async function execute(packageDir: string, pm: 'npm' | 'pnpm' | 'yarn' | 'bun', command: string, flags: string[] = []): Promise<void> {
-    const flagStr = flags.length > 0 ? flags.join(' ') : '';
-
     console.log(`  🔨 Executing with ${pm} run ${command}...`);
-    await $`cd ${packageDir} && ${pm} run ${command} ${flagStr}`;
+    await $`cd ${packageDir} && ${pm} run ${command} ${flags}`;
     console.log(`  ✓ run ${command} completed`);
 }
 

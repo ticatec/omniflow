@@ -27,7 +27,7 @@
  * ```
  */
 
-import { $ } from 'zx'
+import { $ } from './shell.js'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { tmpdir } from 'os'

@@ -27,7 +27,7 @@
 
 import * as path from 'path';
 import {promises as fs} from 'fs';
-import {$} from 'zx';
+import {$} from './shell.js';
 import ssh, {type SshConnectionConfig} from './ssh.js';
 
 /**

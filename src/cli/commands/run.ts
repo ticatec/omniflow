@@ -20,8 +20,8 @@
 
 
 import { settingsManager} from '../../config/index.js'
-import {RunOptions, ScriptContext} from "./types.js";
-import CommandExecutor from "./CommandExecutor";
+import {RunOptions} from "./types.js";
+import CommandExecutor from "./CommandExecutor.js";
 
 
 /**
@@ -46,4 +46,6 @@ export async function runCommand(projectKey: string, envName: string, commands: 
 
     // Load configuration
     const executor = new CommandExecutor(OMNIFLOW_HOME, projectKey, envName, commands, options);
+
+    await executor.execute();
 }

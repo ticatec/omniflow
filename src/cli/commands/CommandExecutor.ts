@@ -1,15 +1,15 @@
 import type {CommandDefinition} from '../../types/config.js'
-import {$} from 'zx'
+import {$} from '../../core/shell.js'
 import path from "path";
-import {OmniflowConfigLoader} from "../../config";
-import {EnvironmentConfig} from "../../types/config";
+import {OmniflowConfigLoader} from "../../config/index.js";
+import {EnvironmentConfig} from "../../types/config.js";
 import git from "../../core/git.js";
 import {RunOptions, ScriptContext} from "./types.js";
-import nodeActions from "../../core/node";
-import sshActions from "../../core/ssh";
-import webActions from "../../core/web";
-import dockerActions from "../../core/docker";
-import * as utils from "../utils";
+import nodeActions from "../../core/node.js";
+import sshActions from "../../core/ssh.js";
+import webActions from "../../core/web.js";
+import dockerActions from "../../core/docker.js";
+import * as utils from "../utils/index.js";
 
 interface ExecuteCommand {
     name: string;
@@ -109,6 +109,7 @@ export default class CommandExecutor {
         };
         await this.fetchProject();
         const sharedCommands = await this.loader.loadCommands(actions);
+        const sshConfig = await this.loader.getSshConfig();
         this.context = {
             workspace: this.projectRoot,
             projectRoot: this.projectRoot,
@@ -118,6 +119,7 @@ export default class CommandExecutor {
             actions: actions,
             utils: utils,
             env: mergedVars,
+            sshConfig: sshConfig,
             verbose: this.options.verbose
         }
         if (this.options.verbose) {

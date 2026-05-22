@@ -5,8 +5,50 @@
 
 import path from 'path'
 import {promises as fs} from 'fs'
-import {$} from 'zx'
+import {$} from '../../core/shell.js'
 import {tmpdir} from 'os'
+import type {SshServerConfig} from '../../types/config.js'
+
+/**
+ * Get SSH configuration by key
+ * @param key - SSH configuration key (e.g., 'test', 'prod')
+ * @param sshConfig - SSH configurations object from ctx.sshConfig
+ * @returns SSH server configuration or undefined if not found
+ *
+ * @example
+ * ```ts
+ * // In deployment script
+ * const sshConfig = ctx.utils.getSshConfig('prod', ctx.sshConfig);
+ * if (sshConfig) {
+ *   console.log(`Server: ${sshConfig.server}`);
+ *   console.log(`User: ${sshConfig.user}`);
+ * }
+ * ```
+ */
+export function getSshConfig(
+    key: string,
+    sshConfig?: Record<string, SshServerConfig>
+): SshServerConfig | undefined {
+    return sshConfig?.[key];
+}
+
+/**
+ * Get all available SSH configuration keys
+ * @param sshConfig - SSH configurations object from ctx.sshConfig
+ * @returns Array of available SSH configuration keys
+ *
+ * @example
+ * ```ts
+ * const keys = ctx.utils.getSshConfigKeys(ctx.sshConfig);
+ * console.log('Available SSH configs:', keys);
+ * // Output: ['test', 'prod']
+ * ```
+ */
+export function getSshConfigKeys(
+    sshConfig?: Record<string, SshServerConfig>
+): string[] {
+    return sshConfig ? Object.keys(sshConfig) : [];
+}
 
 /**
  * Replace template variables in a file

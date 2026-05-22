@@ -1,4 +1,5 @@
 import type {VarValue} from "../../config/vars.js";
+import type {SshServerConfig} from "../../types/config.js";
 
 /**
  * Options for running commands
@@ -30,6 +31,8 @@ export interface ScriptContext {
     utils: any
     /** Merged environment variables (omniflow.env + envConfig.vars) */
     env: Record<string, VarValue>
+    /** SSH server configurations from omniflow.ssh */
+    sshConfig?: Record<string, SshServerConfig>
     /** Verbose mode flag */
     verbose: boolean
 }

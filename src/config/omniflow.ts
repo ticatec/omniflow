@@ -2,6 +2,7 @@
 
 import path from 'path'
 import {promises as fs} from 'fs'
+import {pathToFileURL} from 'url'
 import YAML from 'yaml'
 import type {
     OmniflowConfig,
@@ -84,6 +85,9 @@ export class OmniflowConfigLoader {
 
             // Verify config.yaml exists
             await fs.access(configPath)
+
+            // Copy plugin files to share dependencies
+            await this.copyPlugins(configDir)
 
             console.log('✅ Configuration initialized\n')
         } catch (error) {
@@ -278,6 +282,33 @@ export class OmniflowConfigLoader {
     }
 
     /**
+     * Copy plugin files from config to plugins directory
+     * This allows plugins to share omniflow's dependencies
+     */
+    private async copyPlugins(configDir: string): Promise<void> {
+        const pluginsDir = path.join(process.cwd(), 'plugins')
+
+        // Create plugins directory
+        await fs.mkdir(pluginsDir, {recursive: true})
+
+        // Copy all .js files from config to plugins
+        const files = await fs.readdir(configDir)
+        const jsFiles = files.filter(f => f.endsWith('.js'))
+
+        if (jsFiles.length === 0) {
+            return
+        }
+
+        console.log(`   Copying ${jsFiles.length} plugin file(s) to plugins directory...`)
+
+        for (const file of jsFiles) {
+            const srcPath = path.join(configDir, file)
+            const destPath = path.join(pluginsDir, file)
+            await fs.copyFile(srcPath, destPath)
+        }
+    }
+
+    /**
      * Update configuration (fetches from git again)
      */
     async update(): Promise<void> {
@@ -333,6 +364,9 @@ export class OmniflowConfigLoader {
                 await execaCommand('git clean -fd', {cwd: configDir})
             }
 
+            // Copy plugin files to share dependencies
+            await this.copyPlugins(configDir)
+
             // Clear cache
             this.config = null
             this.initialized = false
@@ -368,8 +402,18 @@ export class OmniflowConfigLoader {
     }
 
     /**
-     * Load commands.js from omniflow config directory
-     * Commands file is at OMNIFLOW_HOME/config/commands.js
+     * Get SSH configurations from omniflow global config
+     * @returns SSH server configurations object
+     */
+    async getSshConfig(): Promise<Record<string, any> | undefined> {
+        const config = await this.load()
+        return config.omniflow?.ssh
+    }
+
+    /**
+     * Load index.js from omniflow plugins directory
+     * Plugin files are copied from config to plugins during update/init
+     * This allows plugins to share omniflow's dependencies
      *
      * The file must export a default function:
      * export default function loadCommands(actions, utils) {
@@ -379,8 +423,8 @@ export class OmniflowConfigLoader {
      * Returns the commands object or empty object if file doesn't exist
      */
     async loadCommands(actions: any): Promise<Object> {
-        const OMNIFLOW_HOME = await this.settings.getOmniflowHome()
-        const commandsPath = path.join(OMNIFLOW_HOME, 'config', 'commands.js')
+        const pluginsDir = path.join(process.cwd(), 'plugins')
+        const commandsPath = path.join(pluginsDir, 'index.js')
 
         // Check if file exists
         try {
@@ -392,10 +436,14 @@ export class OmniflowConfigLoader {
 
         // File exists, load and call loadCommands function
         try {
-            const commandsModule = await import(commandsPath)
+            console.log(`Loading commands from ${commandsPath}...`)
+            const commandsUrl = pathToFileURL(commandsPath).href
+            const commandsModule = await import(commandsUrl)
+
             if (typeof commandsModule.default !== 'function') {
-                throw new Error(`commands.js must export a default function: ${commandsPath}`)
+                throw new Error(`index.js must export a default function`)
             }
+
             const commands = commandsModule.default(actions, utils)
             return commands || {}
         } catch (error) {
