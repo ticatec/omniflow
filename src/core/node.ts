@@ -106,7 +106,7 @@ async function install(packageDir: string, pm: 'npm' | 'pnpm' | 'yarn' | 'bun', 
     console.log(`  📦 Installing node modules with ${pm}...`);
 
     // Default flags for pnpm to bypass supply-chain strict checks
-    const defaultFlags = pm === 'pnpm' ? ['--no-frozen-lockfile', '--allow-builds'] : [];
+    const defaultFlags = pm === 'pnpm' ? ['--no-frozen-lockfile', '--dangerously-allow-all-builds'] : [];
     const allFlags = [...defaultFlags, ...flags];
 
     await $`cd ${packageDir} && ${pm} install ${allFlags}`;
