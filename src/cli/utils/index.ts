@@ -181,9 +181,10 @@ export async function tar(opts: {
         const sizeMB = (stats.size / 1024 / 1024).toFixed(2)
         console.log(`  ✓ Archive created: ${stats.size} bytes (${sizeMB} MB)`)
 
-        // Move to final destination
+        // Move to final destination (copy + delete for cross-device support)
         const finalPath = path.join(outputDir, `${filename}.${ext}`)
-        await fs.rename(tempTarPath, finalPath)
+        await fs.copyFile(tempTarPath, finalPath)
+        await fs.unlink(tempTarPath)
 
         return finalPath
     } finally {
