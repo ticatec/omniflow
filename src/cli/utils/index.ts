@@ -10,27 +10,76 @@ import {tmpdir} from 'os'
 import {platform} from 'os'
 
 /**
- * Replace template variables in a file
+ * Format template file by replacing {{key}} placeholders
+ * Uses {{key}} syntax to distinguish from shell environment variables ${var}
+ * Supports nested object access via dot notation: {{docker.io}}
+ * Undefined keys are replaced with empty string
  * @param opts.sourceFile - Source template file path
  * @param opts.targetFile - Target file path
- * @param opts.variables - Variables to replace, e.g. { PROJECT_NAME: 'my-app' }
+ * @param opts.variables - Variables to replace, can include nested objects
+ *
+ * @example
+ * // Template file contains: {{PROJECT_NAME}}-{{VERSION}}
+ * formatTemplateFile({
+ *   sourceFile: './template.txt',
+ *   targetFile: './output.txt',
+ *   variables: { PROJECT_NAME: 'my-app', VERSION: '1.0.0' }
+ * })
+ * // Result: my-app-1.0.0
+ *
+ * // Nested object access:
+ * formatTemplateFile({
+ *   sourceFile: './Dockerfile.tpl',
+ *   targetFile: './Dockerfile',
+ *   variables: {
+ *     docker: { io: 'registry.cn-zhangjiakou.aliyuncs.com', namespace: 'myapp' }
+ *   }
+ * })
+ * // Template: FROM {{docker.io}}/{{docker.namespace}}/{{app}}
+ * // Result: FROM registry.cn-zhangjiakou.aliyuncs.com/myapp/app
+ *
+ * // If key is not defined: xxxx{{suffix}} -> xxxx
  */
-export async function templateReplace(opts: {
+export function formatTemplate(content: string, variables: Record<string, any>): string {
+    // Helper function to get value from nested object using dot notation
+    const getValue = (obj: any, path: string): string => {
+        const keys = path.split('.')
+        let current = obj
+        for (const key of keys) {
+            if (current && typeof current === 'object' && key in current) {
+                current = current[key]
+            } else {
+                return ''
+            }
+        }
+        return String(current ?? '')
+    }
+
+    // Replace all {{key.path}} with values
+    return content.replace(/\{\{([^}]+)\}\}/g, (match, keyPath) => {
+        return getValue(variables, keyPath.trim())
+    })
+}
+
+/**
+ * Format template file by replacing {{key}} placeholders
+ * Reads file, formats content, and writes result
+ * @param opts.sourceFile - Source template file path
+ * @param opts.targetFile - Target file path
+ * @param opts.variables - Variables to replace, can include nested objects
+ */
+export async function formatTemplateFile(opts: {
     sourceFile: string
     targetFile: string
-    variables: Record<string, string>
+    variables: Record<string, any>
 }): Promise<void> {
     const {sourceFile, targetFile, variables} = opts
 
     // Read source file
     const content = await fs.readFile(sourceFile, 'utf-8')
 
-    // Replace all ${VAR_NAME} with values
-    let result = content
-    for (const [key, value] of Object.entries(variables)) {
-        const regex = new RegExp(`\\$\\{${key}\\}`, 'g')
-        result = result.replace(regex, String(value))
-    }
+    // Format content
+    const result = formatTemplate(content, variables)
 
     // Write target file
     await fs.writeFile(targetFile, result, 'utf-8')
