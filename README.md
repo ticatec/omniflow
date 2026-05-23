@@ -445,39 +445,69 @@ projects:
 
 ### 6. Create Deployment Script
 
-Create `omniflow/deploy.js` in the project repository:
+**Important: Each module MUST have an `omniflow.js` file in its corresponding directory to execute CI/CD.**
+
+Script file location rules:
+- With `folder` config: Script at `<projectRoot>/<folder>/omniflow.js`
+- Without `folder` config (empty): Script at `<projectRoot>/omniflow.js`
+
+Create module script files in the project repository:
 
 ```javascript
-export default async function pipeline(ctx) {
+// web/omniflow.js (in module folder directory)
+export default async function pipeline(ctx, folder, args) {
   const { git, shell } = ctx.actions
-  const { env, project, environment } = ctx
+  const { env } = ctx
 
-  console.log(`Deploying ${project.name} to ${environment.name}`)
+  console.log(`Deploying to ${ctx.environment} environment`)
 
-  await shell.script({
-    script: `
-      cd ${ctx.env.WORKSPACE}
-      npm install
-      npm run build
-      # ... deployment steps
-    `
-  })
+  // folder is the module's folder config, empty string means project root
+  const workDir = folder ? `${ctx.projectRoot}/${folder}` : ctx.projectRoot
+
+  // Execute deployment logic
+  await shell.exec(`cd ${workDir} && npm install && npm run build`)
 
   console.log('Deployment complete!')
 }
 ```
 
+**Project repository structure example:**
+```
+my-app.git/
+├── web/
+│   └── omniflow.js       # Frontend module script (required)
+├── api/
+│   └── omniflow.js       # Backend module script (required)
+├── src/
+└── package.json
+```
+
+**Configuration mapping:**
+```yaml
+modules:
+  - name: frontend
+    folder: web           # Maps to web/omniflow.js
+    commands:
+      - name: build
+      - name: deploy
+  - name: backend
+    folder: api           # Maps to api/omniflow.js
+    commands:
+      - name: build
+      - name: deploy
+```
+
 ### 7. Execute Deployment
 
 ```bash
-# Deploy platform service to test environment
-omniflow run -e test my-app/platform frontend-deploy
+# Execute single module command
+omniflow run -e test my-app/platform backend/build
 
-# Run multiple commands in one environment
-omniflow run -e test my-app/platform frontend-deploy backend-build
+# Execute commands across multiple modules
+omniflow run -e test my-app/platform backend/build frontend/deploy backend/push
 
-# Deploy micro-service to production
-omniflow run -e prod my-app/micro-services deploy
+# Single module project (empty folder)
+omniflow run -e test my-app/user-service main/build
 ```
 
 ## CLI Commands
