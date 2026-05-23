@@ -314,7 +314,7 @@ export class OmniflowConfigLoader {
         console.log(`   Copying ${jsFiles.length} plugin file(s) to plugins directory...`)
 
         for (const file of jsFiles) {
-            const srcPath = path.join(configDir, file)
+            const srcPath = path.join(configDir, 'bin', file)
             const destPath = path.join(pluginsDir, file)
             await fs.copyFile(srcPath, destPath)
         }
