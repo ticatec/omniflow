@@ -112,9 +112,9 @@ async function install(packageDir: string, pm: 'npm' | 'pnpm' | 'yarn' | 'bun', 
 async function build(packageDir: string, pm: 'npm' | 'pnpm' | 'yarn' | 'bun', flags: string[] = []): Promise<void> {
     console.log(`  🔨 Building with ${pm} run build...`);
     if (flags.length > 0) {
-        await $`cd ${packageDir} && ${pm} run build ${flags}`;
+        await $`bash -c "cd ${packageDir} && ${pm} run build ${flags.join(' ')}"`;
     } else {
-        await $`cd ${packageDir} && ${pm} run build`;
+        await $`bash -c "cd ${packageDir} && ${pm} run build"`;
     }
     console.log(`  ✓ run build completed`);
 }
