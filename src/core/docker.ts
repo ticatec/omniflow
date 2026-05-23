@@ -78,7 +78,9 @@ async function compose(targetDir: string, tplFile: string, preCommands: string):
     // Execute docker-compose
     console.log(`  🚀 Starting docker-compose...`);
     try {
-        await $`${composeCmd}`;
+        await $`cd ${targetDir}
+        ${composeCmd}
+        `;
         console.log(`  ✓ Docker compose completed`);
     } catch (error: any) {
         throw new Error(`Docker compose failed: ${error.message}`);
