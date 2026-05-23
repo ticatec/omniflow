@@ -8,8 +8,9 @@
  * export default async (ctx) => {
  *   const pkgDir = ctx.workspace
  *
- *   // Get package version
- *   const version = await ctx.actions.node.getPackageVersion(pkgDir)
+ *   // Get package info (includes fullName and namespace for scoped packages)
+ *   const info = await ctx.actions.node.getPackageInfo(pkgDir)
+ *   // returns: { name: '@scope/package', version: '1.0.0', fullName: '@scope/package', namespace: 'scope' }
  *
  *   // Install dependencies
  *   await ctx.actions.node.install(pkgDir, 'pnpm')
@@ -33,61 +34,43 @@ import {$} from './shell.js';
 export type PackageManager = 'npm' | 'pnpm' | 'yarn' | 'bun';
 
 /**
- * Get the version string from package.json
+ * Get package name, version, fullName, and optionally namespace from package.json
  *
  * @param packageDir - Directory containing package.json
- * @returns Package version string
- *
- * @example
- * ```ts
- * const version = await getPackageVersion('/path/to/project');
- * // returns: '1.0.0'
- * ```
- */
-async function getPackageVersion(packageDir: string): Promise<string> {
-    const packageJsonPath = path.join(packageDir, 'package.json');
-    const content = await fs.readFile(packageJsonPath, 'utf-8');
-    const packageJson = JSON.parse(content);
-    return packageJson.version;
-}
-
-/**
- * Get the package name from package.json
- *
- * @param packageDir - Directory containing package.json
- * @returns Package name string
- *
- * @example
- * ```ts
- * const name = await getPackageName('/path/to/project');
- * // returns: 'my-awesome-package'
- * ```
- */
-async function getPackageName(packageDir: string): Promise<string> {
-    const packageJsonPath = path.join(packageDir, 'package.json');
-    const content = await fs.readFile(packageJsonPath, 'utf-8');
-    const packageJson = JSON.parse(content);
-    return packageJson.name;
-}
-
-/**
- * Get both package name and version from package.json
- *
- * @param packageDir - Directory containing package.json
- * @returns Object containing name and version
+ * @returns Object containing name, version, fullName, and optionally namespace
  *
  * @example
  * ```ts
  * const info = await getPackageInfo('/path/to/project');
- * // returns: { name: 'my-package', version: '1.0.0' }
+ * // returns: { name: 'my-package', version: '1.0.0', fullName: 'my-package' }
+ *
+ * const scopedInfo = await getPackageInfo('/path/to/scoped-project');
+ * // returns: { name: '@scope/package', version: '1.0.0', fullName: '@scope/package', namespace: 'scope' }
  * ```
  */
-async function getPackageInfo(packageDir: string): Promise<{ name: string; version: string }> {
-    const [name, version] = await Promise.all([
-        getPackageName(packageDir),
-        getPackageVersion(packageDir)
-    ]);
-    return {name, version};
+async function getPackageInfo(packageDir: string): Promise<{
+    name: string;
+    version: string;
+    fullName: string;
+    namespace?: string;
+}> {
+    const packageJsonPath = path.join(packageDir, 'package.json');
+    const content = await fs.readFile(packageJsonPath, 'utf-8');
+    const packageJson = JSON.parse(content);
+    const name = packageJson.name;
+    const version = packageJson.version;
+    const fullName = packageJson.name;
+
+    // Parse scoped package name (@namespace/name)
+    if (name.startsWith('@')) {
+        const parts = name.split('/');
+        if (parts.length >= 2) {
+            const namespace = parts[0].slice(1); // Remove '@' prefix
+            return {name, version, fullName, namespace};
+        }
+    }
+
+    return {name, version, fullName};
 }
 
 /**
@@ -155,8 +138,6 @@ async function execute(packageDir: string, pm: 'npm' | 'pnpm' | 'yarn' | 'bun', 
 }
 
 export default {
-    getPackageVersion,
-    getPackageName,
     getPackageInfo,
     install,
     build,
