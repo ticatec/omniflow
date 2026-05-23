@@ -217,11 +217,12 @@ export async function tar(opts: {
     await fs.mkdir(tempDir, {recursive: true})
 
     try {
-        // Copy source directory contents to temp directory
+        // Copy source directory contents to temp directory (not the directory itself)
+        // Use /. to ensure we copy contents, and ensure tempDir exists
         // Set COPYFILE_DISABLE to avoid macOS extended attributes
         const originalEnv = $.env
         $.env = {...process.env, COPYFILE_DISABLE: '1'}
-        await $`cp -R ${sourceDir}/ ${tempDir}`
+        await $`cp -R ${sourceDir}/. ${tempDir}/`
         $.env = originalEnv
 
         // Determine extension and tar flags
