@@ -75,13 +75,8 @@ export interface SshConnectionConfig extends SshAuthConfig {
  * // Result: ./releases/app.tar.gz -> deploy@192.168.1.100:/var/www/releases/app.tar.gz
  * ```
  */
-async function cp(
-    sshConfig: SshConnectionConfig,
-    srcFile: string,
-    targetFolder: string
-): Promise<void> {
+async function cp(sshConfig: SshConnectionConfig, srcFile: string, targetFolder: string): Promise<void> {
     const { host, port } = sshConfig
-    const filename = path.basename(srcFile)
 
     console.log(`  📤 SCP: ${srcFile} -> ${sshConfig.user}@${host}:${port || 22}:${targetFolder}/`)
 
