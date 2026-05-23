@@ -299,10 +299,12 @@ export class OmniflowConfigLoader {
         const pluginsDir = path.join(process.cwd(), 'plugins')
 
         // Create plugins directory
-        await fs.mkdir(pluginsDir, {recursive: true})
+        await fs.mkdir(pluginsDir, {recursive: true});
+
+        const commandsFolder = path.join(configDir, 'bin')
 
         // Copy all .js files from config to plugins
-        const files = await fs.readdir(configDir)
+        const files = await fs.readdir(commandsFolder)
         const jsFiles = files.filter(f => f.endsWith('.js'))
 
         if (jsFiles.length === 0) {

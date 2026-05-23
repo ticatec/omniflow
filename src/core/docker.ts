@@ -41,7 +41,7 @@ function createComposeCommands(workDir: string, preCommands: string): string {
 /**
  * Create docker-compose containers locally
  *
- * @param workDir - Working directory for docker-compose
+ * @param targetDir
  * @param tplFile - Path to docker-compose template file
  * @param preCommands - Optional commands to run before docker-compose
  *
@@ -62,7 +62,7 @@ function createComposeCommands(workDir: string, preCommands: string): string {
  * )
  * ```
  */
-async function compose(targetDir: string, tplFile: string, preCommands?: string): Promise<void> {
+async function compose(targetDir: string, tplFile: string, preCommands: string): Promise<void> {
     console.log(`  🐳 Local Docker Compose`);
     console.log(`     targetDir: ${targetDir}`);
 
@@ -73,7 +73,7 @@ async function compose(targetDir: string, tplFile: string, preCommands?: string)
 
     await $`cp ${tplFile} ${targetDir}/`;
 
-    const composeCmd = createComposeCommands(targetDir, preCommands??'');
+    const composeCmd = createComposeCommands(targetDir, preCommands);
 
     // Execute docker-compose
     console.log(`  🚀 Starting docker-compose...`);
