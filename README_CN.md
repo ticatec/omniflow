@@ -304,9 +304,9 @@ export default function loadCommands(actions, utils) {
 **在项目脚本中使用：**
 
 ```javascript
-// omniflow.js
-export default async function pipeline(ctx, folder, args) {
-  // ctx.commands 包含从 commands.js 加载的自定义命令
+// .omniflow/pipeline.js
+async function build(ctx, folder, args) {
+  // ctx.commands 包含从 bin/index.js 加载的自定义命令
 
   // 使用自定义的 remoteDeploy 命令
   await ctx.commands.remoteDeploy({
@@ -322,6 +322,14 @@ export default async function pipeline(ctx, folder, args) {
     workspace: ctx.projectRoot,
     pm: 'pnpm'
   })
+
+  console.log(`构建版本: ${version}`)
+  console.log(`归档文件: ${tarPath}`)
+}
+
+// 导出所有函数
+export { build }
+```
 
   console.log(`构建版本: ${version}`)
   console.log(`归档文件: ${tarPath}`)
@@ -481,20 +489,29 @@ projects:
 
 ```javascript
 // web/.omniflow/pipeline.js (模块 folder 目录下)
-export default async function pipeline(ctx, folder, args) {
-  const { git, shell } = ctx.actions
+
+// 构建Docker镜像
+async function build_docker(ctx, folder, args) {
   const { env } = ctx
 
-  console.log(`部署到 ${ctx.environment} 环境`)
-
-  // folder 是模块的 folder 配置，空字符串表示项目根目录
+  console.log(`构建Docker镜像`)
   const workDir = folder ? `${ctx.projectRoot}/${folder}` : ctx.projectRoot
-
-  // 执行部署逻辑
-  await shell.exec(`cd ${workDir} && npm install && npm run build`)
-
-  console.log('部署完成!')
+  
+  // 构建逻辑...
 }
+
+// 部署容器
+async function compose(ctx, folder, args) {
+  const { env } = ctx
+  
+  console.log(`部署容器，端口: ${args.port || '3000'}`)
+  const workDir = folder ? `${ctx.projectRoot}/${folder}` : ctx.projectRoot
+  
+  // 部署逻辑...
+}
+
+// 导出所有函数（ES模块语法）
+export { build_docker, compose }
 ```
 
 **项目仓库结构示例：**
@@ -516,13 +533,14 @@ modules:
   - name: frontend
     folder: web           # 对应 web/.omniflow/pipeline.js
     commands:
-      - name: build
-      - name: deploy
+      - name: build_docker # 调用 build_docker() 函数
+      - name: compose      # 调用 compose() 函数
+      - name: deploy       # 调用 deploy() 函数
   - name: backend
     folder: api           # 对应 api/.omniflow/pipeline.js
     commands:
-      - name: build
-      - name: deploy
+      - name: build        # 调用 build() 函数
+      - name: deploy       # 调用 deploy() 函数
 ```
 
 ### 6. 执行部署
@@ -573,18 +591,25 @@ omniflow update
 
 ## 脚本上下文
 
-部署脚本接收的参数：
+根据命令名称调用对应的具名函数：
 
 ```javascript
 /**
- * 模块脚本函数签名
+ * 模块脚本函数示例
  * @param {ScriptContext} context - 脚本上下文对象
  * @param {string} folder - 模块的 folder 配置（空字符串表示项目根目录）
  * @param {Object} args - 命令参数（来自 command.args）
  */
-export default async function moduleScript(context, folder, args) {
+async function build_docker(context, folder, args) {
   // 脚本实现
 }
+
+async function deploy(context, folder, args) {
+  // 脚本实现
+}
+
+// 导出所有函数
+export { build_docker, deploy }
 ```
 
 **ScriptContext 对象结构：**
@@ -1145,9 +1170,13 @@ environments:
 
 **脚本执行：**
 
+根据命令名称调用对应的函数：
+
 ```javascript
-// 脚本接收参数: (context, folder, args)
-export default async function moduleScript(context, folder, args) {
+// .omniflow/pipeline.js
+
+// 函数签名: (context, folder, args)
+async function build_docker(context, folder, args) {
   console.log('folder:', folder)        // 来自 module.folder
   console.log('args:', args)            // 来自 command.args
   console.log('env:', context.env)     // 合并后的环境变量
@@ -1156,7 +1185,18 @@ export default async function moduleScript(context, folder, args) {
   const workDir = folder ? `${context.projectRoot}/${folder}` : context.projectRoot
   // ...
 }
+
+async function compose(context, folder, args) {
+  // ...
+}
+
+// 导出所有函数
+export { build_docker, compose }
 ```
+
+**调用关系：**
+- 命令 `omni-gateway:build_docker` → 调用 `build_docker(context, folder, args)`
+- 命令 `omni-gateway:compose` → 调用 `compose(context, folder, args)`
     - name: prod
       branch: main
 ```

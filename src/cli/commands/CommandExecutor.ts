@@ -261,11 +261,19 @@ export default class CommandExecutor {
             const resolvedScriptPath = path.resolve(scriptPath)
             const scriptModule = await import(resolvedScriptPath)
 
-            if (typeof scriptModule.default === 'function') {
+            // 根据命令名查找对应的具名函数
+            const commandFunction = scriptModule[commandDef.name]
+            if (typeof commandFunction === 'function') {
                 // 传递 folder 用于路径解析（空字符串表示项目根目录）
-                await scriptModule.default(this.context, folder, commandDef.args)
+                await commandFunction(this.context, folder, commandDef.args)
             } else {
-                throw new Error(`Script must export a default function: ${resolvedScriptPath}`)
+                const availableFunctions = Object.keys(scriptModule).filter(
+                    key => typeof scriptModule[key] === 'function' && key !== 'default'
+                )
+                throw new Error(
+                    `Function '${commandDef.name}' not found in ${resolvedScriptPath}\n` +
+                    `Available functions: ${availableFunctions.join(', ') || 'none'}`
+                )
             }
         }
     }

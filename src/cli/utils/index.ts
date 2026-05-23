@@ -8,6 +8,7 @@ import {promises as fs} from 'fs'
 import {$} from '../../core/shell.js'
 import {tmpdir} from 'os'
 import {platform} from 'os'
+import os from 'os';
 
 /**
  * Format template file by replacing {{key}} placeholders
@@ -244,12 +245,25 @@ export async function tar(opts: {
         const finalPath = path.join(outputDir, `${filename}.${ext}`)
         await fs.copyFile(tempTarPath, finalPath)
         await fs.unlink(tempTarPath)
-
         return finalPath
     } finally {
         // Clean up temp directory
         await fs.rm(tempBase, {recursive: true, force: true})
     }
+}
+
+export function parsePath(inputPath: string): string {
+    // 1. 处理以 ~ 开头的情况
+    if (inputPath === '~' || inputPath.startsWith('~/') || inputPath.startsWith('~\\')) {
+        const homeDir = os.homedir();
+        // 切掉 ~ 符号，并与用户主目录拼接
+        const subPath = inputPath.slice(1);
+        return path.resolve(homeDir, subPath.startsWith('/') || subPath.startsWith('\\') ? subPath.slice(1) : subPath);
+    }
+
+    // 2. 如果是绝对路径（如 /opt/build），path.resolve 会直接返回它
+    // 3. 如果是普通相对路径（如 ./build 或 build），path.resolve 会自动结合 process.cwd() 将其转为绝对路径
+    return path.resolve(inputPath);
 }
 
 /**

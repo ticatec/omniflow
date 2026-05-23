@@ -455,20 +455,29 @@ Create module script files in the project repository:
 
 ```javascript
 // web/.omniflow/pipeline.js (in module folder directory)
-export default async function pipeline(ctx, folder, args) {
-  const { git, shell } = ctx.actions
+
+// Build Docker image
+async function build_docker(ctx, folder, args) {
   const { env } = ctx
 
-  console.log(`Deploying to ${ctx.environment} environment`)
-
-  // folder is the module's folder config, empty string means project root
+  console.log(`Building Docker image`)
   const workDir = folder ? `${ctx.projectRoot}/${folder}` : ctx.projectRoot
-
-  // Execute deployment logic
-  await shell.exec(`cd ${workDir} && npm install && npm run build`)
-
-  console.log('Deployment complete!')
+  
+  // Build logic...
 }
+
+// Deploy containers
+async function compose(ctx, folder, args) {
+  const { env } = ctx
+  
+  console.log(`Deploying containers, port: ${args.port || '3000'}`)
+  const workDir = folder ? `${ctx.projectRoot}/${folder}` : ctx.projectRoot
+  
+  // Deploy logic...
+}
+
+// Export all functions (ES module syntax)
+export { build_docker, compose }
 ```
 
 **Project repository structure example:**
@@ -490,14 +499,20 @@ modules:
   - name: frontend
     folder: web           # Maps to web/.omniflow/pipeline.js
     commands:
-      - name: build
-      - name: deploy
+      - name: build_docker # Calls build_docker() function
+      - name: compose      # Calls compose() function
+      - name: deploy       # Calls deploy() function
   - name: backend
     folder: api           # Maps to api/.omniflow/pipeline.js
     commands:
-      - name: build
-      - name: deploy
+      - name: build        # Calls build() function
+      - name: deploy       # Calls deploy() function
 ```
+
+**Function mapping:**
+- Command `frontend:build_docker` → Calls `build_docker(context, folder, args)`
+- Command `frontend:compose` → Calls `compose(context, folder, args)`
+
 
 ### 7. Execute Deployment
 
