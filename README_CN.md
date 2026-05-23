@@ -471,6 +471,12 @@ projects:
 
 ### 5. 创建部署脚本
 
+**重要：每个模块必须在对应的目录下创建 `omniflow.js` 文件才能执行 CI/CD。**
+
+脚本文件位置规则：
+- 有 `folder` 配置：脚本位于 `<projectRoot>/<folder>/omniflow.js`
+- 无 `folder` 配置（空）：脚本位于 `<projectRoot>/omniflow.js`
+
 在项目仓库创建模块脚本文件：
 
 ```javascript
@@ -489,6 +495,32 @@ export default async function pipeline(ctx, folder, args) {
 
   console.log('部署完成!')
 }
+```
+
+**项目仓库结构示例：**
+```
+my-app.git/
+├── web/
+│   └── omniflow.js       # frontend 模块的脚本（必需）
+├── api/
+│   └── omniflow.js       # backend 模块的脚本（必需）
+├── src/
+└── package.json
+```
+
+**配置对应关系：**
+```yaml
+modules:
+  - name: frontend
+    folder: web           # 对应 web/omniflow.js
+    commands:
+      - name: build
+      - name: deploy
+  - name: backend
+    folder: api           # 对应 api/omniflow.js
+    commands:
+      - name: build
+      - name: deploy
 ```
 
 ### 6. 执行部署
