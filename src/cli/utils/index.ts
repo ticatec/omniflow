@@ -73,11 +73,11 @@ export function formatDockerEnv(opts: {
  * mergeDockerEnv({
  *   envArrays: [
  *     ['- UID=${MY_UID}', '- GID=${MY_GID}'],  // from omniflow.env
- *     ['- CONFIG_FILE=omni/config.yaml']        // from command
+ *     ['- CONFIG_FILE=omni/omniflow.yaml']        // from command
  *   ]
  * })
  * // Returns:
- * // '    - UID=${MY_UID}\n    - GID=${MY_GID}\n    - CONFIG_FILE=omni/config.yaml'
+ * // '    - UID=${MY_UID}\n    - GID=${MY_GID}\n    - CONFIG_FILE=omni/omniflow.yaml'
  */
 export function mergeDockerEnv(opts: {
     envArrays: (string[] | undefined)[]

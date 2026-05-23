@@ -54,7 +54,7 @@ export class OmniflowConfigLoader {
         const OMNIFLOW_CONFIG_BRANCH = await this.settings.getConfigBranch()
         const {username, password} = await this.settings.getGitCredentials()
         const OMNIFLOW_HOME = await this.settings.getOmniflowHome()
-        const OMNIFLOW_CONFIG_FILE = process.env.OMNIFLOW_CONFIG_FILE || 'config.yaml'
+        const OMNIFLOW_CONFIG_FILE = process.env.OMNIFLOW_CONFIG_FILE || 'omniflow.yaml'
 
         // If no config repo, prompt for interactive setup
         if (!OMNIFLOW_CONFIG_REPO) {
@@ -99,7 +99,7 @@ export class OmniflowConfigLoader {
                 env: {...process.env, GIT_TERMINAL_PROMPT: '0'}
             })
 
-            // Verify config.yaml exists
+            // Verify omniflow.yaml exists
             await fs.access(configPath)
 
             // Copy plugin files to share dependencies
@@ -140,7 +140,7 @@ export class OmniflowConfigLoader {
 
         // Get paths
         const OMNIFLOW_HOME = await this.settings.getOmniflowHome()
-        const OMNIFLOW_CONFIG_FILE = process.env.OMNIFLOW_CONFIG_FILE || 'config.yaml'
+        const OMNIFLOW_CONFIG_FILE = process.env.OMNIFLOW_CONFIG_FILE || 'omniflow.yaml'
         const configPath = path.join(OMNIFLOW_HOME, 'config', OMNIFLOW_CONFIG_FILE)
 
         const rawConfig = await this.loadConfigFile(configPath)

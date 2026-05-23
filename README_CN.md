@@ -12,7 +12,7 @@
 ```
 OMNIFLOW_CONFIG_REPO (环境变量) → 配置仓库地址
         ↓
-每次运行时从 git 获取 config.yaml  → 统一调度入口，定义所有项目和环境
+每次运行时从 git 获取 omniflow.yaml  → 统一调度入口，定义所有项目和环境
         ↓
 项目仓库/omniflow/deploy.js → 部署脚本，项目自己管理
 ```
@@ -20,7 +20,7 @@ OMNIFLOW_CONFIG_REPO (环境变量) → 配置仓库地址
 ## 特性
 
 - **统一调度入口** - 一个配置文件管理所有 CI/CD 项目
-- **配置来自 Git** - 从 git 仓库获取 config.yaml 和 commands.js
+- **配置来自 Git** - 从 git 仓库获取 omniflow.yaml 和 commands.js
 - **项目自管理 pipeline** - 部署脚本在项目仓库中，可版本控制
 - **JavaScript 脚本** - 用代码编写 pipeline，灵活强大
 - **文件夹嵌套** - 支持项目分组，任意层次嵌套
@@ -104,10 +104,10 @@ Omniflow 使用 `OMNIFLOW_HOME` 作为工作目录（默认 `~/.omniflow`）：
 ```
 ~/.omniflow/
 ├── config/
-│   ├── config.yaml      # 统一调度配置（从 git 获取）
+│   ├── omniflow.yaml      # 统一调度配置（从 git 获取）
 │   └── commands.js      # 公共命令库（从 git 获取，可选）
 └── project/             # 项目工作区
-    └── <project-key>/   # 项目路径与 config.yaml 结构对应
+    └── <project-key>/   # 项目路径与 omniflow.yaml 结构对应
         └── <environment>/  # 环境隔离的工作目录
             └── <cloned-repo>/  # 从项目 git 仓库克隆
 ```
@@ -116,7 +116,7 @@ Omniflow 使用 `OMNIFLOW_HOME` 作为工作目录（默认 `~/.omniflow`）：
 ```
 ~/.omniflow/
 ├── config/
-│   ├── config.yaml      # 从 OMNIFLOW_CONFIG_REPO 获取
+│   ├── omniflow.yaml      # 从 OMNIFLOW_CONFIG_REPO 获取
 │   └── commands.js      # 从 OMNIFLOW_CONFIG_REPO 获取
 └── project/
     ├── my-app/platform/
@@ -130,7 +130,7 @@ Omniflow 使用 `OMNIFLOW_HOME` 作为工作目录（默认 `~/.omniflow`）：
 ```
 
 **项目路径映射规则：**
-- config.yaml 中的 `projects` 结构直接映射到 `project/` 目录
+- omniflow.yaml 中的 `projects` 结构直接映射到 `project/` 目录
 - 每个环境有独立的工作目录，互不干扰
 - `folder` 类型项创建目录
 - `project` 类型项从其 git 地址克隆代码到对应路径
@@ -141,7 +141,7 @@ Omniflow 使用 `OMNIFLOW_HOME` 作为工作目录（默认 `~/.omniflow`）：
 
 ```
 config.git/
-├── config.yaml       # 必需：统一调度配置
+├── omniflow.yaml       # 必需：统一调度配置
 └── commands.js       # 可选：公共命令库
 ```
 
@@ -159,7 +159,7 @@ config.git/
 ```javascript
 /**
  * Omniflow 公共命令库
- * 位置：配置仓库根目录 (与 config.yaml 同级)
+ * 位置：配置仓库根目录 (与 omniflow.yaml 同级)
  *
  * 必须导出默认函数：
  * export default function loadCommands(actions, utils) { return {...} }
@@ -347,7 +347,7 @@ export default async function pipeline(ctx, folder, appName, args) {
 
 ### 4. 编辑配置文件
 
-在配置仓库中编辑 `config.yaml` 添加项目：
+在配置仓库中编辑 `omniflow.yaml` 添加项目：
 
 ```yaml
 omniflow:
@@ -903,7 +903,7 @@ projects:
 
 ```
 配置仓库 (通过 OMNIFLOW_CONFIG_REPO 指定):
-└── config.yaml              # 统一调度入口
+└── omniflow.yaml              # 统一调度入口
 
 项目仓库:
 my-app.git/
@@ -1059,7 +1059,7 @@ omniflow:
 ## 更多文档
 
 - [架构设计](docs/architecture.md)
-- [完整配置示例](examples/config.yaml)
+- [完整配置示例](examples/omniflow.yaml)
 - [部署脚本示例](examples/scripts/deploy.js)
 - [公共命令库示例](examples/commands.js)
 

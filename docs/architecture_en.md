@@ -4,7 +4,7 @@
 
 Omniflow adopts a **unified scheduling entry + project self-managed pipeline** architecture:
 
-- **config.yaml** - Unified scheduling entry, fetched from git, manages all CI/CD projects
+- **omniflow.yaml** - Unified scheduling entry, fetched from git, manages all CI/CD projects
 - **Project Repository** - Each project's pipeline script is managed in its own code repository
 
 ## Architecture Layers
@@ -21,7 +21,7 @@ Environment Variables:
 │                    Working Directory                              │
 ├─────────────────────────────────────────────────────────────────┤
 │  cache/config/            # Config repository cache               │
-│    ├── config.yaml       # Unified scheduling config             │
+│    ├── omniflow.yaml       # Unified scheduling config             │
 │    └── commands.js       # Shared commands library (optional)    │
 │  project/                # Workspace                              │
 │    └── <project>/<env>/  # Project code checkout                 │
@@ -59,7 +59,7 @@ Environment Variables:
 
 ## Configuration File Responsibilities
 
-### config.yaml (in configuration repository)
+### omniflow.yaml (in configuration repository)
 
 **Purpose**: Unified scheduling entry, directory organization
 
@@ -88,7 +88,7 @@ Environment Variables:
 **Characteristics**:
 - Centralized management of common deployment commands (SSH, Docker, etc.)
 - Reduces code duplication and improves reusability
-- Located at the root of the configuration repository, alongside config.yaml
+- Located at the root of the configuration repository, alongside omniflow.yaml
 
 **Usage**:
 ```javascript
@@ -271,7 +271,7 @@ environments:
 # 1. Set configuration repository address
 export OMNIFLOW_CONFIG_REPO=https://git.example.com/omniflow/config.git
 
-# 2. Edit config.yaml in configuration repository to add projects
+# 2. Edit omniflow.yaml in configuration repository to add projects
 
 # 3. Create omniflow/deploy.js in project repository
 

@@ -186,8 +186,8 @@ export class SettingsManager {
           env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
         })
 
-        // Verify config.yaml exists
-        const configPath = path.join(configDir, 'config.yaml')
+        // Verify omniflow.yaml exists
+        const configPath = path.join(configDir, 'omniflow.yaml')
         await fs.access(configPath)
 
         console.log('✅ Connection successful!\n')

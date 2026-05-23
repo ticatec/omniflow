@@ -2,7 +2,7 @@
  * Omniflow 公共命令库示例，用于
  *
  * 此文件定义了可被所有项目 pipeline 使用的公共命令
- * 位置：配置仓库根目录 (与 config.yaml 同级)
+ * 位置：配置仓库根目录 (与 omniflow.yaml 同级)
  *
  * 使用方式：
  *   export default async function pipeline(ctx) {

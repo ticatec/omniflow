@@ -12,7 +12,7 @@ A unified CI/CD project scheduling and management tool with **unified scheduling
 ```
 OMNIFLOW_CONFIG_REPO (env var) → Configuration repository URL
         ↓
-Fetch config.yaml from git on each run → Unified scheduling entry, defines all projects and environments
+Fetch omniflow.yaml from git on each run → Unified scheduling entry, defines all projects and environments
         ↓
 Project repo/omniflow/deploy.js → Deployment script, managed by project itself
 ```
@@ -20,7 +20,7 @@ Project repo/omniflow/deploy.js → Deployment script, managed by project itself
 ## Features
 
 - **Unified Scheduling Entry** - Manage all CI/CD projects in one config file
-- **Configuration from Git** - Fetch config.yaml and commands.js from git repository
+- **Configuration from Git** - Fetch omniflow.yaml and commands.js from git repository
 - **Project Self-managed Pipeline** - Deployment scripts in project repos with version control
 - **JavaScript Scripts** - Write pipelines in code, flexible and powerful
 - **Folder Nesting** - Support project grouping with arbitrary nesting
@@ -97,7 +97,7 @@ GIT_TOKEN=your-token
 EOF
 ```
 
-The configuration repository should contain a `config.yaml` file.
+The configuration repository should contain a `omniflow.yaml` file.
 
 ### 2. Workspace Directory Structure
 
@@ -106,10 +106,10 @@ Omniflow uses `OMNIFLOW_HOME` as the working directory (defaults to `~/.omniflow
 ```
 ~/.omniflow/
 ├── config/
-│   ├── config.yaml      # Unified scheduling config (from git)
+│   ├── omniflow.yaml      # Unified scheduling config (from git)
 │   └── commands.js      # Shared commands library (from git, optional)
 └── project/             # Projects workspace
-    └── <project-key>/   # Project path matches config.yaml structure
+    └── <project-key>/   # Project path matches omniflow.yaml structure
         └── <environment>/  # Environment-isolated workspace
             └── <cloned-repo>/  # Cloned from project git repository
 ```
@@ -118,7 +118,7 @@ Example:
 ```
 ~/.omniflow/
 ├── config/
-│   ├── config.yaml      # Fetched from OMNIFLOW_CONFIG_REPO
+│   ├── omniflow.yaml      # Fetched from OMNIFLOW_CONFIG_REPO
 │   └── commands.js      # Fetched from OMNIFLOW_CONFIG_REPO
 └── project/
     ├── my-app/platform/
@@ -132,7 +132,7 @@ Example:
 ```
 
 **Project path mapping rules:**
-- The `projects` structure in config.yaml directly maps to the `project/` directory
+- The `projects` structure in omniflow.yaml directly maps to the `project/` directory
 - Each environment has an isolated workspace directory
 - `folder` type items create directories
 - `project` type items clone code from their git repository to the corresponding path
@@ -151,7 +151,7 @@ Create `commands.js` in the configuration repository to define common commands t
 ```javascript
 /**
  * Omniflow Shared Commands Library
- * Location: Configuration repository root (same level as config.yaml)
+ * Location: Configuration repository root (same level as omniflow.yaml)
  *
  * Must export default function:
  * export default function loadCommands(actions, utils) { return {...} }
@@ -343,13 +343,13 @@ The configuration repository should contain:
 
 ```
 config.git/
-├── config.yaml       # Required: Unified scheduling config
+├── omniflow.yaml       # Required: Unified scheduling config
 └── commands.js       # Optional: Shared commands library
 ```
 
 ### 5. Edit Configuration File
 
-Edit `config.yaml` in the configuration repository to add projects:
+Edit `omniflow.yaml` in the configuration repository to add projects:
 
 ```yaml
 omniflow:
@@ -721,7 +721,7 @@ Final test environment `deploy_config`:
 
 ```
 Configuration Repository (specified by OMNIFLOW_CONFIG_REPO):
-└── config.yaml              # Unified scheduling entry
+└── omniflow.yaml              # Unified scheduling entry
 
 Project Repository:
 my-app.git/
@@ -871,10 +871,10 @@ omniflow:
 ```
 ~/.omniflow/
 ├── config/
-│   ├── config.yaml      # From OMNIFLOW_CONFIG_REPO
+│   ├── omniflow.yaml      # From OMNIFLOW_CONFIG_REPO
 │   └── commands.js      # From OMNIFLOW_CONFIG_REPO (optional)
 └── project/
-    └── <project-key>/   # Path matches config.yaml projects structure
+    └── <project-key>/   # Path matches omniflow.yaml projects structure
         └── <environment>/  # Environment-isolated workspace
             └── <cloned-repo>/
 ```
@@ -883,7 +883,7 @@ Example:
 ```
 ~/.omniflow/
 ├── config/
-│   ├── config.yaml
+│   ├── omniflow.yaml
 │   └── commands.js
 └── project/
     ├── my-app/platform/
@@ -902,7 +902,7 @@ Example:
 ## More Documentation
 
 - [Architecture Design](docs/architecture.md)
-- [Configuration Example](examples/config.yaml)
+- [Configuration Example](examples/omniflow.yaml)
 - [Deployment Script Example](examples/scripts/deploy.js)
 - [Shared Commands Library Example](examples/commands.js)
 
