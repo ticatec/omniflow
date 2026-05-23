@@ -46,7 +46,7 @@ npm link
 **Note:** When using `npm run start` to run commands, use `--` to separate arguments to prevent npm from parsing `-e` as `--enjoy-by`:
 
 ```bash
-npm run start -- run -e test omni-gate/platform command-name
+npm run start -- run -e test omni-gate/platform backend/build
 ```
 
 ## Quick Start
@@ -97,8 +97,6 @@ GIT_TOKEN=your-token
 EOF
 ```
 
-The configuration repository should contain a `omniflow.yaml` file.
-
 ### 2. Workspace Directory Structure
 
 Omniflow uses `OMNIFLOW_HOME` as the working directory (defaults to `~/.omniflow`):
@@ -107,11 +105,10 @@ Omniflow uses `OMNIFLOW_HOME` as the working directory (defaults to `~/.omniflow
 ~/.omniflow/
 ├── config/
 │   ├── omniflow.yaml      # Unified scheduling config (from git)
-│   └── commands.js      # Shared commands library (from git, optional)
+│   └── bin/
+│       └── index.js       # Shared commands library (from git, optional)
 └── project/             # Projects workspace
     └── <project-key>/   # Project path matches omniflow.yaml structure
-        └── <environment>/  # Environment-isolated workspace
-            └── <cloned-repo>/  # Cloned from project git repository
 ```
 
 Example:
@@ -119,29 +116,25 @@ Example:
 ~/.omniflow/
 ├── config/
 │   ├── omniflow.yaml      # Fetched from OMNIFLOW_CONFIG_REPO
-│   └── commands.js      # Fetched from OMNIFLOW_CONFIG_REPO
+│   └── bin/
+│       └── index.js       # Fetched from OMNIFLOW_CONFIG_REPO
 └── project/
-    ├── my-app/platform/
-    │   ├── test/        # Test environment workspace
-    │   └── prod/        # Production environment workspace
-    └── my-app/micro-services/
-        └── user/
-            └── auth/
-                ├── test/
-                └── prod/
+    ├── my-app/platform/   # Project cloned here
+    └── my-app/micro-services/user/auth/
 ```
 
 **Project path mapping rules:**
 - The `projects` structure in omniflow.yaml directly maps to the `project/` directory
-- Each environment has an isolated workspace directory
-- `folder` type items create directories
+- `folder` type items create directory structure
 - `project` type items clone code from their git repository to the corresponding path
+- On each run, switch to the branch corresponding to the specified environment
 
 ### 3. Create Shared Commands Library (Optional)
 
-Create `commands.js` in the configuration repository to define common commands that can be used by all projects.
+Create `bin/index.js` in the configuration repository to define common commands that can be used by all projects.
 
 **File Format Requirements:**
+- Location: `bin/index.js` in the config repository
 - Must export a default function: `export default function loadCommands(actions, utils)`
 - Function receives `actions` and `utils` provided by omniflow
 - Function returns an object containing custom commands
@@ -173,7 +166,7 @@ Create `commands.js` in the configuration repository to define common commands t
  *
  * utils includes:
  *   - getPackageVersion({ workspace, subdir })
- *   - templateReplace({ sourceFile, targetFile, variables })
+ *   - formatTemplateFile({ sourceFile, targetFile, variables })
  *   - tar({ sourceDir, filename, outputDir })
  */
 export default function loadCommands(actions, utils) {
@@ -294,8 +287,8 @@ export default function loadCommands(actions, utils) {
 **Usage in project scripts:**
 
 ```javascript
-// omniflow/deploy.js
-export default async function pipeline(ctx, folder, appName, args) {
+// omniflow.js
+export default async function pipeline(ctx, folder, args) {
   // ctx.commands contains custom commands loaded from commands.js
 
   // Use custom remoteDeploy command
@@ -334,7 +327,7 @@ export default async function pipeline(ctx, folder, appName, args) {
 | Method | Description |
 |--------|-------------|
 | `getPackageVersion({ workspace, subdir })` | Get version from package.json |
-| `templateReplace({ sourceFile, targetFile, variables })` | Replace template variables |
+| `formatTemplateFile({ sourceFile, targetFile, variables })` | Replace template variables |
 | `tar({ sourceDir, filename, outputDir })` | Pack directory into tar.gz |
 
 ### 4. Create Configuration Repository
@@ -397,13 +390,27 @@ projects:
           APP_NAME: platform
           IMAGE_PREFIX: company/platform
           DEPLOY_HOST: platform.example.com
-        commands:             # Project-level command definitions
-          - name: frontend-deploy
-            description: Deploy frontend application
-            script: ./omniflow/frontend-deploy.js
-          - name: backend-build
-            description: Build docker image
-            script: ./omniflow/backend-build.js
+        modules:              # Module configuration
+          - name: frontend
+            description: Frontend Application
+            folder: web
+            appName: web-app
+            commands:
+              - name: build
+                description: Build frontend
+              - name: deploy
+                description: Deploy frontend
+                args:
+                  PORT: "3000"
+          - name: backend
+            description: Backend Service
+            folder: api
+            appName: api-server
+            commands:
+              - name: build
+                description: Build Docker image
+              - name: push
+                description: Push image
         environments:          # Required for projects
           - name: test
             description: Test Environment
@@ -416,13 +423,19 @@ projects:
             branch: main
             merge_from: main-test
 
-      # Project: User Service
+      # Project: User Service (single module, empty folder means script in project root)
       - name: user-service
         description: User Service
         vars:
           REPLICAS: "3"
         repos:
           git: ${GIT_REPOS}/my-app/user-service.git
+        modules:
+          - name: main
+            description: Main Service
+            commands:
+              - name: build
+              - name: deploy
         environments:
           - name: test
             branch: main-test
@@ -471,9 +484,9 @@ omniflow run -e prod my-app/micro-services deploy
 
 ```bash
 # Run deployment (using cached config)
-omniflow run -e <environment> <project-path> <command> [command...]
+omniflow run -e <environment> <project-path> <module/command> [module/command...]
 # project-path supports nested paths, e.g.: my-app/platform
-# Multiple commands can be specified, executed sequentially
+# Command format: module/command, can execute across multiple modules
 
 # List all projects
 omniflow list projects
@@ -481,8 +494,14 @@ omniflow list projects
 # List project environments
 omniflow list environments <project-path>
 
-# List available commands for project (commands are defined at project level, shared by all environments)
+# List modules for project
+omniflow list modules <project-path>
+
+# List all modules and commands for project
 omniflow list commands <project-path>
+
+# List commands for specific module
+omniflow list commands <project-path> backend
 
 # Show project details
 omniflow show <project-path> [environment]
@@ -536,7 +555,7 @@ export default async function deployScript(context, folder, appName, args) {
   // Utils
   utils: {
     getPackageVersion,      // Get package.json version
-    templateReplace,        // Replace template variables
+    formatTemplateFile,        // Replace template variables
     tar                     // Pack directory
   },
 
@@ -610,7 +629,41 @@ await ctx.actions.docker.compose('/path/to/project', 'docker-compose.yml', 'up -
 | Method | Description |
 |--------|-------------|
 | `getPackageVersion({ workspace, subdir })` | Get version from package.json |
-| `templateReplace({ sourceFile, targetFile, variables })` | Replace variables in template file |
+| `formatTemplateFile({ sourceFile, targetFile, variables })` | Format template file and write |
+| `formatTemplate(content, variables)` | Format template string, return result |
+| `mergeComposeEnv({ envInputs, indent })` | Merge Docker Compose environment variables |
+| `tar({ sourceDir, filename, outputDir, zip })` | Create tar or tar.gz archive |
+
+**Template Variable Syntax:**
+
+Use `{{key}}` placeholders (distinguished from shell env vars `${var}`), supports nested object access:
+
+```javascript
+// Template file content
+// FROM {{docker.io}}/{{docker.namespace}}/{{app}}:{{version}}
+
+await ctx.utils.formatTemplateFile({
+  sourceFile: './Dockerfile.tpl',
+  targetFile: './Dockerfile',
+  variables: {
+    app: 'my-service',
+    version: '1.0.0',
+    docker: {
+      io: 'registry.cn-zhangjiakou.aliyuncs.com',
+      namespace: 'ticatec'
+    }
+  }
+})
+// Result: FROM registry.cn-zhangjiakou.aliyuncs.com/ticatec/my-service:1.0.0
+
+// String formatting
+const content = 'Hello {{name}}, version is {{app.version}}'
+const result = ctx.utils.formatTemplate(content, {
+  name: 'World',
+  app: { version: '2.0.0' }
+})
+// result: 'Hello World, version is 2.0.0'
+```
 
 **Usage Example:**
 
@@ -621,8 +674,8 @@ const version = await ctx.utils.getPackageVersion({
   subdir: 'omni_sse'  // optional subdirectory
 })
 
-// Replace template variables
-await ctx.utils.templateReplace({
+// Format template file
+await ctx.utils.formatTemplateFile({
   sourceFile: './docker-compose.tpl.yml',
   targetFile: './docker-compose.yml',
   variables: {
@@ -631,6 +684,14 @@ await ctx.utils.templateReplace({
     PORT: '3000'
   }
 })
+
+// Create tar.gz archive
+await ctx.utils.tar({
+  sourceDir: './dist',
+  filename: 'my-app-1.0.0',
+  outputDir: './releases'
+})
+// Generates: ./releases/my-app-1.0.0.tar.gz
 ```
 
 ### ctx.environment - Environment Attributes

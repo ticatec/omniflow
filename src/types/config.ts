@@ -37,7 +37,7 @@ export interface ProjectItem {
   // Project 类型属性
   repos?: GitProjectConfig        // 项目的仓库配置（仅 project）
   environments?: EnvironmentConfig[]  // 环境配置（仅 project）
-  commands?: CommandDefinition[]  // 可执行的命令列表（仅 project，所有环境共享）
+  modules?: ModuleConfig[]        // 模块配置（仅 project），替代 commands
 
   // 通用属性（folder 和 project 都可以定义）
   vars?: Record<string, string>   // 变量（folder 的变量会被子项继承）
@@ -57,6 +57,16 @@ export interface GitProjectConfig {
 export type ProjectDefinition = Omit<ProjectItem, 'items'> & {
   repos: GitProjectConfig
   environments?: EnvironmentConfig[]
+  modules?: ModuleConfig[]
+}
+
+// 模块配置（project 下的命令分组）
+export interface ModuleConfig {
+  name: string                      // 模块名称
+  description?: string              // 模块描述
+  folder?: string                   // 模块所在子目录（相对于项目根目录）
+  appName?: string                  // 应用名称（可选，传递给脚本）
+  commands: CommandDefinition[]     // 模块包含的命令列表
 }
 
 // 环境配置
@@ -72,8 +82,7 @@ export interface EnvironmentConfig {
 export interface CommandDefinition {
   name: string                      // 命令名称（如 frontend-deploy）
   description?: string              // 命令描述
-  folder?: string                   // 命令所在子目录（相对于项目根目录，如 omni-gateway）
-  script: string                   // 脚本文件路径（相对于命令主目录，如 omniflow/build_docker.js）
+  script: string                    // 脚本文件路径（相对于模块目录）
   args?: Record<string, string>     // 命令级别的变量（优先级最高，会合并到 env 中）
 }
 

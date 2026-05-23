@@ -46,7 +46,7 @@ npm link
 **注意：** 如果使用 `npm run start` 运行命令，需要使用 `--` 分隔参数，避免 npm 将 `-e` 解析为 `--enjoy-by`：
 
 ```bash
-npm run start -- run -e test omni-gate/platform command-name
+npm run start -- run -e test omni-gate/platform backend/build
 ```
 
 ## 快速开始
@@ -105,11 +105,10 @@ Omniflow 使用 `OMNIFLOW_HOME` 作为工作目录（默认 `~/.omniflow`）：
 ~/.omniflow/
 ├── config/
 │   ├── omniflow.yaml      # 统一调度配置（从 git 获取）
-│   └── commands.js      # 公共命令库（从 git 获取，可选）
+│   └── bin/
+│       └── index.js       # 公共命令库（从 git 获取，可选）
 └── project/             # 项目工作区
     └── <project-key>/   # 项目路径与 omniflow.yaml 结构对应
-        └── <environment>/  # 环境隔离的工作目录
-            └── <cloned-repo>/  # 从项目 git 仓库克隆
 ```
 
 示例：
@@ -117,23 +116,18 @@ Omniflow 使用 `OMNIFLOW_HOME` 作为工作目录（默认 `~/.omniflow`）：
 ~/.omniflow/
 ├── config/
 │   ├── omniflow.yaml      # 从 OMNIFLOW_CONFIG_REPO 获取
-│   └── commands.js      # 从 OMNIFLOW_CONFIG_REPO 获取
+│   └── bin/
+│       └── index.js       # 从 OMNIFLOW_CONFIG_REPO 获取
 └── project/
-    ├── my-app/platform/
-    │   ├── test/        # 测试环境工作区
-    │   └── prod/        # 生产环境工作区
-    └── my-app/micro-services/
-        └── user/
-            └── auth/
-                ├── test/
-                └── prod/
+    ├── my-app/platform/   # 项目克隆到这里
+    └── my-app/micro-services/user/auth/
 ```
 
 **项目路径映射规则：**
 - omniflow.yaml 中的 `projects` 结构直接映射到 `project/` 目录
-- 每个环境有独立的工作目录，互不干扰
-- `folder` 类型项创建目录
+- `folder` 类型项创建目录结构
 - `project` 类型项从其 git 地址克隆代码到对应路径
+- 每次运行时根据指定的环境切换到对应分支
 
 ### 3. 创建配置仓库
 
@@ -142,14 +136,16 @@ Omniflow 使用 `OMNIFLOW_HOME` 作为工作目录（默认 `~/.omniflow`）：
 ```
 config.git/
 ├── omniflow.yaml       # 必需：统一调度配置
-└── commands.js       # 可选：公共命令库
+└── bin/
+    └── index.js        # 可选：公共命令库
 ```
 
-### 3. 创建公共命令库（可选）
+### 4. 创建公共命令库（可选）
 
-在配置仓库中创建 `commands.js`，定义可被所有项目使用的公共命令。
+在配置仓库的 `bin/` 目录下创建 `index.js`，定义可被所有项目使用的公共命令。
 
 **文件格式要求：**
+- 位置：配置仓库的 `bin/index.js`
 - 必须导出一个默认函数 `export default function loadCommands(actions, utils)`
 - 函数接收 omniflow 提供的 `actions` 和 `utils` 作为参数
 - 函数返回一个包含自定义命令的对象
@@ -159,11 +155,15 @@ config.git/
 ```javascript
 /**
  * Omniflow 公共命令库
- * 位置：配置仓库根目录 (与 omniflow.yaml 同级)
+ * 位置：配置仓库/bin/index.js
  *
  * 必须导出默认函数：
  * export default function loadCommands(actions, utils) { return {...} }
  */
+
+// 导入各模块（如果需要分文件组织）
+// import * as node from './commands/node.js';
+// import * as docker from './commands/docker.js';
 
 /**
  * loadCommands - omniflow 加载命令的入口函数
@@ -181,7 +181,9 @@ config.git/
  *
  * utils 包含:
  *   - getPackageVersion({ workspace, subdir })
- *   - templateReplace({ sourceFile, targetFile, variables })
+ *   - formatTemplateFile({ sourceFile, targetFile, variables })
+ *   - formatTemplate(content, variables)
+ *   - mergeComposeEnv({ envInputs, indent })
  *   - tar({ sourceDir, filename, outputDir })
  */
 export default function loadCommands(actions, utils) {
@@ -302,8 +304,8 @@ export default function loadCommands(actions, utils) {
 **在项目脚本中使用：**
 
 ```javascript
-// omniflow/deploy.js
-export default async function pipeline(ctx, folder, appName, args) {
+// omniflow.js
+export default async function pipeline(ctx, folder, args) {
   // ctx.commands 包含从 commands.js 加载的自定义命令
 
   // 使用自定义的 remoteDeploy 命令
@@ -342,7 +344,9 @@ export default async function pipeline(ctx, folder, appName, args) {
 | 方法 | 说明 |
 |------|------|
 | `getPackageVersion({ workspace, subdir })` | 获取 package.json 版本 |
-| `templateReplace({ sourceFile, targetFile, variables })` | 替换模板变量 |
+| `formatTemplateFile({ sourceFile, targetFile, variables })` | 格式化模板文件 |
+| `formatTemplate(content, variables)` | 格式化模板字符串 |
+| `mergeComposeEnv({ envInputs, indent })` | 合并 Docker Compose 环境变量 |
 | `tar({ sourceDir, filename, outputDir })` | 打包目录为 tar.gz |
 
 ### 4. 编辑配置文件
@@ -394,13 +398,27 @@ projects:
           APP_NAME: platform
           IMAGE_PREFIX: company/platform
           DEPLOY_HOST: platform.example.com
-        commands:             # 可执行的命令列表（所有环境共享）
-          - name: frontend-deploy
-            description: 部署前端应用
-            script: ./omniflow/frontend-deploy.js
-          - name: backend-build
-            description: 制作docker镜像
-            script: ./omniflow/backend-build.js
+        modules:              # 模块配置（所有环境共享）
+          - name: frontend
+            description: 前端应用
+            folder: web
+            appName: web-app
+            commands:
+              - name: build
+                description: 构建前端
+              - name: deploy
+                description: 部署前端
+                args:
+                  PORT: "3000"
+          - name: backend
+            description: 后端服务
+            folder: api
+            appName: api-server
+            commands:
+              - name: build
+                description: 构建Docker镜像
+              - name: push
+                description: 推送镜像
         environments:          # 项目必需
           - name: test
             description: 测试环境
@@ -413,13 +431,19 @@ projects:
             branch: main
             merge_from: main-test
 
-      # 项目：用户服务
+      # 项目：用户服务（单一模块，folder为空表示脚本在项目根目录）
       - name: user-service
         description: 用户服务
         vars:
           REPLICAS: "3"
         repos:
           git: ${GIT_REPOS}/my-app/user-service.git
+        modules:
+          - name: main
+            description: 主服务
+            commands:
+              - name: build
+              - name: deploy
         environments:
           - name: test
             branch: main-test
@@ -433,33 +457,35 @@ projects:
           REPLICAS: "2"
         repos:
           git: ${GIT_REPOS}/my-app/order-service.git
+        modules:
+          - name: service
+            commands:
+              - name: build
+              - name: deploy
         environments:
           - name: test
             branch: main-test
           - name: prod
             branch: main
-                description: 部署webhooks微服务
 ```
 
 ### 5. 创建部署脚本
 
-在项目仓库创建 `omniflow/deploy.js`:
+在项目仓库创建模块脚本文件：
 
 ```javascript
-export default async function pipeline(ctx) {
+// web/omniflow.js (模块 folder 目录下)
+export default async function pipeline(ctx, folder, args) {
   const { git, shell } = ctx.actions
-  const { env, globals, secrets, system } = ctx
+  const { env } = ctx
 
-  console.log(`部署 ${system.PROJECT_NAME} v${system.PACKAGE_VERSION}`)
+  console.log(`部署到 ${ctx.environment} 环境`)
 
-  await shell.script({
-    script: `
-      cd ${system.WORKPLACE}
-      npm install
-      npm run build
-      # ... 部署步骤
-    `
-  })
+  // folder 是模块的 folder 配置，空字符串表示项目根目录
+  const workDir = folder ? `${ctx.projectRoot}/${folder}` : ctx.projectRoot
+
+  // 执行部署逻辑
+  await shell.exec(`cd ${workDir} && npm install && npm run build`)
 
   console.log('部署完成!')
 }
@@ -468,23 +494,23 @@ export default async function pipeline(ctx) {
 ### 6. 执行部署
 
 ```bash
-# 部署平台服务的测试环境
-omniflow run -e test my-app/platform frontend-deploy
+# 执行单个模块的命令
+omniflow run -e test my-app/platform backend/build
 
-# 在一个环境下同时运行多个命令
-omniflow run -e test my-app/platform frontend-deploy backend-build
+# 跨模块执行多个命令
+omniflow run -e test my-app/platform backend/build frontend/deploy backend/push
 
-# 部署微服务的生产环境
-omniflow run -e prod my-app/micro-services deploy
+# 单一模块项目（folder 为空）
+omniflow run -e test my-app/user-service main/build
 ```
 
 ## CLI 命令
 
 ```bash
 # 运行部署（使用缓存的配置）
-omniflow run -e <environment> <project-path> <command> [command...]
+omniflow run -e <environment> <project-path> <module/command> [module/command...]
 # project-path 支持嵌套路径，如: my-app/platform
-# 可同时运行多个命令，按顺序执行
+# 命令格式: module/command，可跨模块执行多个命令
 
 # 列出所有项目
 omniflow list projects
@@ -492,8 +518,14 @@ omniflow list projects
 # 列出项目的环境
 omniflow list environments <project-path>
 
-# 列出项目的可用命令（命令定义在项目级别，所有环境共享）
+# 列出项目的模块
+omniflow list modules <project-path>
+
+# 列出项目的所有模块和命令
 omniflow list commands <project-path>
+
+# 列出指定模块的命令
+omniflow list commands <project-path> backend
 
 # 查看项目详情
 omniflow show <project-path> [environment]
@@ -511,13 +543,12 @@ omniflow update
 
 ```javascript
 /**
- * 部署脚本函数签名
+ * 模块脚本函数签名
  * @param {ScriptContext} context - 脚本上下文对象
- * @param {string|undefined} folder - 命令所在子目录（来自 command.folder）
- * @param {string|undefined} appName - 应用名称（来自 command.appName）
+ * @param {string} folder - 模块的 folder 配置（空字符串表示项目根目录）
  * @param {Object} args - 命令参数（来自 command.args）
  */
-export default async function deployScript(context, folder, appName, args) {
+export default async function moduleScript(context, folder, args) {
   // 脚本实现
 }
 ```
@@ -547,7 +578,7 @@ export default async function deployScript(context, folder, appName, args) {
   // 工具函数 (utils)
   utils: {
     getPackageVersion,      // 获取 package.json 版本
-    templateReplace,        // 替换模板变量
+    formatTemplateFile,        // 替换模板变量
     tar                     // 打包目录
   },
 
@@ -774,8 +805,56 @@ await ctx.actions.node.execute({
 | 方法 | 说明 |
 |------|------|
 | `getPackageVersion({ workspace, subdir })` | 获取 package.json 中的版本号 |
-| `templateReplace({ sourceFile, targetFile, variables })` | 替换模板文件中的变量 |
+| `formatTemplateFile({ sourceFile, targetFile, variables })` | 格式化模板文件并写入 |
+| `formatTemplate(content, variables)` | 格式化模板字符串，返回结果 |
+| `mergeComposeEnv({ envInputs, indent })` | 合并 Docker Compose 环境变量 |
 | `tar({ sourceDir, filename, outputDir, zip })` | 打包目录为 tar 或 tar.gz |
+
+**模板变量语法：**
+
+使用 `{{key}}` 占位符（与 shell 环境变量 `${var}` 区分），支持嵌套对象访问：
+
+```javascript
+// 模板文件内容
+// FROM {{docker.io}}/{{docker.namespace}}/{{app}}:{{version}}
+
+await ctx.utils.formatTemplateFile({
+  sourceFile: './Dockerfile.tpl',
+  targetFile: './Dockerfile',
+  variables: {
+    app: 'my-service',
+    version: '1.0.0',
+    docker: {
+      io: 'registry.cn-zhangjiakou.aliyuncs.com',
+      namespace: 'ticatec'
+    }
+  }
+})
+// 结果: FROM registry.cn-zhangjiakou.aliyuncs.com/ticatec/my-service:1.0.0
+
+// 字符串格式化
+const content = 'Hello {{name}}, version is {{app.version}}'
+const result = ctx.utils.formatTemplate(content, {
+  name: 'World',
+  app: { version: '2.0.0' }
+})
+// result: 'Hello World, version is 2.0.0'
+```
+
+**Docker Compose 环境变量合并：**
+
+```javascript
+// 合并环境变量（支持数组格式和对象格式）
+const envYaml = ctx.utils.mergeComposeEnv({
+  envInputs: [
+    ['- UID=${MY_UID}', '- GID=${MY_GID}'],  // 数组格式
+    {CONFIG_MODE: 'consul', CONSUL_PORT: '8500'}  // 对象格式
+  ],
+  indent: '    '
+})
+// 结果:
+// '    - UID=${MY_UID}\n    - GID=${MY_GID}\n    - CONFIG_MODE=consul\n    - CONSUL_PORT=8500'
+```
 
 **使用示例：**
 
@@ -786,8 +865,8 @@ const version = await ctx.utils.getPackageVersion({
   subdir: 'omni_sse'  // 可选子目录
 })
 
-// 替换模板变量
-await ctx.utils.templateReplace({
+// 格式化模板文件
+await ctx.utils.formatTemplateFile({
   sourceFile: './docker-compose.tpl.yml',
   targetFile: './docker-compose.yml',
   variables: {
@@ -904,11 +983,14 @@ projects:
 ```
 配置仓库 (通过 OMNIFLOW_CONFIG_REPO 指定):
 └── omniflow.yaml              # 统一调度入口
+└── index.js                   # 公共命令库（可选）
 
 项目仓库:
 my-app.git/
-├── omniflow/
-│   └── deploy.js           # 部署脚本
+├── web/                       # 模块目录
+│   └── omniflow.js           # 模块脚本
+├── api/                       # 模块目录
+│   └── omniflow.js           # 模块脚本
 ├── src/
 └── package.json
 
@@ -917,12 +999,12 @@ projects:
   - name: omni-gate          # 文件夹
     items:
       - name: platform       # 项目
+        modules:
+          - name: web
+            folder: web
+          - name: api
+            folder: api
         environments: [...]
-      - name: micro-services # 嵌套文件夹
-        type: folder
-        items:
-          - name: test       # 环境
-          - name: prod       # 环境
 ```
 
 ## 配置说明
@@ -966,32 +1048,33 @@ environments:
       API_URL: https://test.api.com
 ```
 
-### 项目命令配置
+### 项目模块配置
 
-命令定义在项目级别，所有环境共享相同的命令列表：
+项目通过 `modules` 定义模块，每个模块包含一组命令：
 
 ```yaml
 - name: my-project
   description: 我的项目
   repos:
     git: ${GIT_REPOS}/my-project.git
-  commands:               # 项目级别的命令定义
-    - name: deploy
-      description: 部署应用
-      script: omniflow/deploy.js    # 脚本路径（相对于项目根目录）
-    - name: build-frontend
-      description: 构建前端
-      folder: frontend              # 命令所在子目录
-      script: omniflow/build.js     # 脚本路径（相对于 folder 目录）
-      appName: web-app              # 应用名称（传递给脚本）
-    - name: deploy-backend
-      description: 部署后端服务
-      folder: backend
-      script: omniflow/deploy.js
-      appName: api-server
-      args:                          # 命令级别参数
-        PORT: "8080"
-        NODE_ENV: production
+  modules:                    # 模块配置
+    - name: frontend          # 模块名称（用于命令执行）
+      description: 前端应用
+      folder: web             # 可选，子目录路径（空表示项目根目录）
+      appName: web-app        # 可选，应用名称
+      commands:               # 模块包含的命令
+        - name: build
+          description: 构建前端
+        - name: deploy
+          description: 部署前端
+          args:               # 命令参数
+            PORT: "3000"
+    - name: backend
+      description: 后端服务
+      folder: api             # 脚本位于 api/omniflow.js
+      commands:
+        - name: build
+        - name: deploy
   environments:
     - name: test
       branch: main-test
@@ -999,38 +1082,44 @@ environments:
       branch: main
 ```
 
+**模块字段说明：**
+
+| 字段 | 类型 | 必需 | 说明 |
+|------|------|------|------|
+| `name` | string | 是 | 模块名称，用于命令执行 |
+| `description` | string | 否 | 模块描述 |
+| `folder` | string | 否 | 子目录路径（相对于项目根目录），空表示根目录 |
+| `appName` | string | 否 | 应用名称 |
+| `commands` | array | 是 | 命令列表 |
+
 **命令字段说明：**
 
 | 字段 | 类型 | 必需 | 说明 |
 |------|------|------|------|
-| `name` | string | 是 | 命令名称，用于执行时指定 |
+| `name` | string | 是 | 命令名称 |
 | `description` | string | 否 | 命令描述 |
-| `folder` | string | 否 | 命令所在子目录（相对于项目根目录） |
-| `script` | string | 是 | 脚本路径（相对于项目根目录或 folder 目录） |
-| `appName` | string | 否 | 应用名称，传递给脚本 |
-| `args` | object | 否 | 命令级别参数，合并到 context.env 中 |
+| `args` | object | 否 | 命令参数 |
+
+**脚本位置：**
+
+脚本文件固定为模块目录下的 `omniflow.js`：
+- 有 folder: `<projectRoot>/<folder>/omniflow.js`
+- 无 folder: `<projectRoot>/omniflow.js`
 
 **脚本执行：**
 
 ```javascript
-// 脚本接收参数: (context, folder, appName, args)
-export default async function deployScript(context, folder, appName, args) {
-  console.log('folder:', folder)        // 来自 command.folder
-  console.log('appName:', appName)      // 来自 command.appName
+// 脚本接收参数: (context, folder, args)
+export default async function moduleScript(context, folder, args) {
+  console.log('folder:', folder)        // 来自 module.folder
   console.log('args:', args)            // 来自 command.args
   console.log('env:', context.env)     // 合并后的环境变量
 
   // 执行部署逻辑
+  const workDir = folder ? `${context.projectRoot}/${folder}` : context.projectRoot
   // ...
 }
 ```
-
-**脚本路径解析：**
-
-1. 如果指定了 `folder`，脚本基础目录为 `<projectRoot>/<folder>`
-2. `script` 路径相对于基础目录
-3. 例如：`folder: frontend`, `script: omniflow/build.js`
-   - 完整路径：`<projectRoot>/frontend/omniflow/build.js`
     - name: prod
       branch: main
 ```

@@ -1,19 +1,19 @@
 /**
  * Omniflow Run Command
  *
- * Executes deployment scripts for a project in a specific environment.
- * Scripts receive (context, folder, appName, args) parameters:
+ * Executes deployment scripts for a project module in a specific environment.
+ * Scripts receive (context, folder, args) parameters:
  * - context: Contains workspace, project info, actions, utils, etc.
- * - folder: Command's subdirectory (optional, from command.folder)
- * - appName: Application name (optional, from command.appName)
+ * - folder: Module's subdirectory (from module.folder), empty string for root
  * - args: Command-specific arguments from command.args
  *
  * @example
  * ```ts
- * // omniflow/build_docker.js
- * export default async (ctx, folder, appName, args) => {
- *   const { projectName } = args
- *   await ctx.actions.docker.compose(workDir, tplFile)
+ * // omni-gateway/omniflow.js
+ * export default async (ctx, folder, args) => {
+ *   const { env } = ctx
+ *   const projectRoot = folder ? path.resolve(ctx.projectRoot, folder) : ctx.projectRoot
+ *   // ... build logic
  * }
  * ```
  */
@@ -29,12 +29,13 @@ import CommandExecutor from "./CommandExecutor.js";
  *
  * @param projectKey - Project identifier (e.g., 'team/project')
  * @param envName - Environment name (e.g., 'dev', 'prod')
- * @param commands - Array of command names to execute
+ * @param commands - Array of command specs in format "module/command" (e.g., ['backend/build', 'frontend/deploy'])
  * @param options - Execution options
  *
  * @example
  * ```ts
- * await runCommand('myapp/web', 'prod', ['build', 'deploy'], {
+ * // Execute commands in different modules
+ * await runCommand('myapp/web', 'prod', ['backend/build', 'frontend/deploy'], {
  *   dryRun: false,
  *   verbose: true
  * })

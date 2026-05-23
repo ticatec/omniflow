@@ -19,7 +19,7 @@ program
   .command('run')
   .description('Run deployment for a project')
   .argument('<project>', 'Project key (e.g., omni-gate/platform)')
-  .argument('<commands...>', 'Commands to run (e.g., frontend-deploy backend-deploy)')
+  .argument('<commands...>', 'Commands to run in format "module/command" (e.g., backend/build frontend/deploy)')
   .requiredOption('-e, --environment <env>', 'Environment name (e.g., test, prod)')
   .option('-d, --dry-run', 'Preview mode without execution')
   .option('-v, --verbose', 'Verbose output')
@@ -31,14 +31,15 @@ program
   })
 
 // =============================================================================
-// List command - List projects or environments
+// List command - List projects, environments, modules, or commands
 // =============================================================================
 program
   .command('list')
-  .description('List projects, environments, or commands')
-  .argument('<type>', 'Type to list: projects, environments, commands')
-  .argument('[project]', 'Project key (required for type: environments, commands)')
-  .action(async (type, project) => {
+  .description('List projects, environments, modules, or commands')
+  .argument('<type>', 'Type to list: projects, environments, modules, commands')
+  .argument('[project]', 'Project key (required for type: environments, modules, commands)')
+  .argument('[name]', 'Module name (for filtering commands in a specific module)')
+  .action(async (type, project, name) => {
     const loader = OmniflowConfigLoader.getInstance()
     await loader.load()
 
@@ -68,6 +69,37 @@ program
           }
         }
       }
+    } else if (type === 'modules') {
+      if (!project) {
+        console.error('❌ Project key is required for listing modules')
+        process.exit(1)
+      }
+
+      const projectConfig = loader.getProject(project)
+      if (!projectConfig) {
+        console.error(`❌ Project not found: ${project}`)
+        process.exit(1)
+      }
+
+      if (!projectConfig.modules || projectConfig.modules.length === 0) {
+        console.log(`No modules defined for ${project}`)
+        return
+      }
+
+      console.log(`Modules for ${project}:\n`)
+      for (const mod of projectConfig.modules) {
+        console.log(`  ${mod.name}${mod.description ? ' - ' + mod.description : ''}`)
+        if (mod.folder) {
+          console.log(`    folder: ${mod.folder}`)
+        }
+        if (mod.appName) {
+          console.log(`    appName: ${mod.appName}`)
+        }
+        if (mod.commands && mod.commands.length > 0) {
+          console.log(`    commands: ${mod.commands.map((c: any) => c.name).join(', ')}`)
+        }
+        console.log('')
+      }
     } else if (type === 'commands') {
       if (!project) {
         console.error('❌ Project key is required for listing commands')
@@ -80,20 +112,42 @@ program
         process.exit(1)
       }
 
-      if (!projectConfig.commands || projectConfig.commands.length === 0) {
-        console.log(`No commands defined for ${project}`)
+      if (!projectConfig.modules || projectConfig.modules.length === 0) {
+        console.log(`No modules defined for ${project}`)
         return
       }
 
-      console.log(`Commands for ${project}:\n`)
-      for (const cmd of projectConfig.commands) {
-        console.log(`  ${cmd.name}${cmd.description ? ' - ' + cmd.description : ''}`)
-        if (cmd.script) {
-          console.log(`    script: ${cmd.script}`)
+      // Filter by module name if specified
+      const modules = name
+        ? projectConfig.modules.filter((m: any) => m.name === name)
+        : projectConfig.modules
+
+      if (modules.length === 0) {
+        console.log(name
+          ? `Module '${name}' not found in ${project}`
+          : `No modules defined for ${project}`)
+        return
+      }
+
+      console.log(`${name ? `Module '${name}'` : 'Modules and commands'} for ${project}:\n`)
+      for (const mod of modules) {
+        console.log(`  Module: ${mod.name}${mod.description ? ' - ' + mod.description : ''}`)
+        if (mod.folder) {
+          console.log(`    folder: ${mod.folder}`)
         }
+        if (mod.appName) {
+          console.log(`    appName: ${mod.appName}`)
+        }
+        if (mod.commands && mod.commands.length > 0) {
+          console.log(`    commands:`)
+          for (const cmd of mod.commands) {
+            console.log(`      - ${cmd.name}${cmd.description ? ': ' + cmd.description : ''}`)
+          }
+        }
+        console.log('')
       }
     } else {
-      console.error('❌ Invalid type. Use "projects", "environments", or "commands"')
+      console.error('❌ Invalid type. Use "projects", "environments", "modules", or "commands"')
       process.exit(1)
     }
   })

@@ -1,4 +1,4 @@
-import type {CommandDefinition} from '../../types/config.js'
+import type {CommandDefinition, ModuleConfig} from '../../types/config.js'
 import {$} from '../../core/shell.js'
 import path from "path"
 import {OmniflowConfigLoader} from "../../config/index.js"
@@ -9,11 +9,14 @@ import nodeActions from "../../core/node.js"
 import sshActions from "../../core/ssh.js"
 import webActions from "../../core/web.js"
 import dockerActions from "../../core/docker.js"
-import * as utils from "../utils/index.js"
+import *as utils from "../utils/index.js"
 
 interface ExecuteCommand {
-    name: string
+    fullName: string  // 完整命令名 (module/command)
+    moduleName: string  // 模块名
+    commandName: string  // 命令名
     def?: CommandDefinition
+    module?: ModuleConfig
 }
 
 export default class CommandExecutor {
@@ -34,17 +37,27 @@ export default class CommandExecutor {
      * @param omniflowHome - Omniflow home directory
      * @param projectKey - Project identifier (e.g., 'team/project')
      * @param envName - Environment name (e.g., 'dev', 'prod')
-     * @param commands - Array of command names to execute
+     * @param commands - Array of command specs in format 'module/command' or 'command' (uses default module)
      * @param options - Execution options
      */
     constructor(omniflowHome: string, projectKey: string, envName: string, commands: string[], options: RunOptions) {
         this.omniflowHome = omniflowHome
         this.projectKey = projectKey
         this.envName = envName
-        this.commands = commands.map((cmd: string) => ({name: cmd}))
         this.options = options
-        this.projectRoot = path.join(this.omniflowHome, 'project', ...projectKey.split('/'))
         this.loader = OmniflowConfigLoader.getInstance()
+        this.projectRoot = path.join(this.omniflowHome, 'project', ...projectKey.split('/'))
+
+        // 解析命令: 支持格式 "module/command" 或 "command"
+        this.commands = commands.map((cmd: string) => {
+            const parts = cmd.split('/')
+            if (parts.length === 2) {
+                return { fullName: cmd, moduleName: parts[0], commandName: parts[1] }
+            } else {
+                // 只指定命令名，moduleName 留空，后续在 prepare 中处理
+                return { fullName: cmd, moduleName: '', commandName: cmd }
+            }
+        })
     }
 
     /**
@@ -59,39 +72,82 @@ export default class CommandExecutor {
         this.project = this.loader.getProject(this.projectKey)
         this.envConfig = this.loader.getEnvironment(this.projectKey, this.envName)
 
-        // Map command names to their definitions
-        for (const cmd of this.commands) {
-            const def = this.project.commands?.find((c: any) => c.name === cmd.name)
-            if (def) {
-                cmd.def = def
-            } else {
-                console.error(`❌ Command not found: ${cmd.name}`)
-                if (this.project.commands && this.project.commands.length > 0) {
-                    console.log(`\nAvailable commands:`)
-                    for (const c of this.project.commands) {
-                        console.log(`  - ${c.name}${c.description ? ': ' + c.description : ''}`)
+        // Helper: 在指定模块中查找命令
+        const findCommandInModule = (moduleName: string, commandName: string): { def: CommandDefinition; module: ModuleConfig } | null => {
+            const modules = this.project.modules || []
+            const mod = modules.find((m: ModuleConfig) => m.name === moduleName)
+            if (!mod) return null
+            const cmd = mod.commands?.find((c: CommandDefinition) => c.name === commandName)
+            if (cmd) {
+                return { def: cmd, module: mod }
+            }
+            return null
+        }
+
+        // Helper: 在所有模块中查找命令
+        const findCommandInAnyModule = (commandName: string): { def: CommandDefinition; module: ModuleConfig } | null => {
+            const modules = this.project.modules || []
+            for (const mod of modules) {
+                const cmd = mod.commands?.find((c: CommandDefinition) => c.name === commandName)
+                if (cmd) {
+                    return { def: cmd, module: mod }
+                }
+            }
+            return null
+        }
+
+        // Helper: 列出所有可用命令
+        const listAvailableCommands = () => {
+            const modules = this.project.modules || []
+            if (modules.length === 0) {
+                console.log(`  No modules defined`)
+                return
+            }
+            for (const mod of modules) {
+                if (mod.commands && mod.commands.length > 0) {
+                    console.log(`\n  Module: ${mod.name}${mod.description ? ' - ' + mod.description : ''}`)
+                    for (const cmd of mod.commands) {
+                        console.log(`    - ${cmd.name}${cmd.description ? ': ' + cmd.description : ''}`)
                     }
                 }
-                throw new Error(`Command not found: ${cmd.name}`)
+            }
+        }
+
+        // Map command names to their definitions
+        for (const cmd of this.commands) {
+            let found = null
+            if (cmd.moduleName) {
+                // 格式: module/command - 在指定模块中查找
+                found = findCommandInModule(cmd.moduleName, cmd.commandName)
+            } else {
+                // 只有命令名 - 在所有模块中查找
+                found = findCommandInAnyModule(cmd.commandName)
+                if (found) {
+                    cmd.moduleName = found.module.name
+                }
+            }
+
+            if (found) {
+                cmd.def = found.def
+                cmd.module = found.module
+            } else {
+                console.error(`❌ Command not found: ${cmd.fullName}`)
+                console.log(`\nAvailable commands:`)
+                listAvailableCommands()
+                throw new Error(`Command not found: ${cmd.fullName}`)
             }
         }
 
         if (this.commands.length === 0) {
             console.log(`\n📋 Available commands for ${this.projectKey}:\n`)
-            if (!this.project.commands || this.project.commands.length === 0) {
-                console.log(`  No commands defined`)
-            } else {
-                for (const cmd of this.project.commands) {
-                    console.log(`  ${cmd.name}${cmd.description ? ' - ' + cmd.description : ''}`)
-                }
-            }
-            console.log(`\nUsage: omniflow run -e ${this.envName} ${this.projectKey} <command> [command...]`)
+            listAvailableCommands()
+            console.log(`\nUsage: omniflow run -e ${this.envName} ${this.projectKey} <module/command> [module/command...]`)
             throw new Error("Invalid command name")
         }
         console.log(`\n🚀 Running: ${this.project.name || this.projectKey}`)
         console.log(`   Project: ${this.projectKey}`)
         console.log(`   Environment: ${this.envName}`)
-        console.log(`   Commands: ${this.commands.map(c => c.name).join(', ')}`)
+        console.log(`   Commands: ${this.commands.map(c => c.fullName).join(', ')}`)
         console.log(`   Workspace: ${this.projectRoot}`)
         console.log('')
 
@@ -179,16 +235,20 @@ export default class CommandExecutor {
 
     /**
      * Execute a single command script
-     * @param commandDef - Command definition with script path and metadata
+     * @param commandDef - Command definition with metadata
+     * @param module - Module configuration containing folder and appName
      */
-    private async executeCommand(commandDef: CommandDefinition) {
-        // Determine command root directory (projectRoot + folder if specified)
-        const commandRoot = commandDef.folder
-            ? path.join(this.projectRoot, commandDef.folder)
-            : this.projectRoot
+    private async executeCommand(commandDef: CommandDefinition, module: ModuleConfig) {
+        // Determine command root directory
+        // If module.folder is specified, use it; otherwise use project root (for single-repo projects)
+        const folder = module.folder || ''
+        const commandRoot = folder ? path.join(this.projectRoot, folder) : this.projectRoot
 
         if (this.options.verbose) {
             console.log(`\n📜 Command: ${commandDef.name}`)
+            console.log(`   Module: ${module.name}`)
+            console.log(`   Folder: ${folder || '(root)'}`)
+            console.log(`   AppName: ${module.appName || 'N/A'}`)
             console.log(`   Command Root: ${commandRoot}`)
             console.log(`   Args: ${JSON.stringify(commandDef.args || {})}`)
         }
@@ -196,12 +256,14 @@ export default class CommandExecutor {
         if (this.options.dryRun) {
             console.log(`[DRY RUN] Would execute command: ${commandDef.name}\n`)
         } else {
-            const scriptPath = path.join(commandRoot, commandDef.script);
+            // 脚本文件路径固定为 commandRoot/omniflow.js
+            const scriptPath = path.join(commandRoot, 'omniflow.js')
             const resolvedScriptPath = path.resolve(scriptPath)
             const scriptModule = await import(resolvedScriptPath)
 
             if (typeof scriptModule.default === 'function') {
-                await scriptModule.default(this.context, commandDef.folder, commandDef.args)
+                // 传递 folder 用于路径解析（空字符串表示项目根目录）
+                await scriptModule.default(this.context, folder, commandDef.args)
             } else {
                 throw new Error(`Script must export a default function: ${resolvedScriptPath}`)
             }
@@ -216,14 +278,13 @@ export default class CommandExecutor {
         await this.prepare();
         for (let i = 0; i < this.commands.length; i++) {
             let command = this.commands[i];
-            const commandName = command.name;
             console.log(`\n${'─'.repeat(50)}`)
-            console.log(`📋 [${i + 1}/${this.commands.length}] Running: ${commandName}${command.def?.description ? ' - ' + command.def?.description : ''}`)
-            if (command.def) {
-                await this.executeCommand(command.def);
+            console.log(`📋 [${i + 1}/${this.commands.length}] Running: ${command.fullName}${command.def?.description ? ' - ' + command.def?.description : ''}`)
+            if (command.def && command.module) {
+                await this.executeCommand(command.def, command.module);
             } else {
-                console.log(`Missing command: ${commandName}`);
-                throw new Error(`Missing command: ${commandName}`)
+                console.log(`Missing command: ${command.fullName}`);
+                throw new Error(`Missing command: ${command.fullName}`)
             }
             console.log(`${'─'.repeat(50)}`);
 
