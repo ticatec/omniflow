@@ -29,13 +29,13 @@ import CommandExecutor from "./CommandExecutor.js";
  *
  * @param projectKey - Project identifier (e.g., 'team/project')
  * @param envName - Environment name (e.g., 'dev', 'prod')
- * @param commands - Array of command specs in format "module/command" (e.g., ['backend/build', 'frontend/deploy'])
+ * @param commands - Array of command specs in format "module:command" (e.g., ['backend:build', 'frontend:deploy'])
  * @param options - Execution options
  *
  * @example
  * ```ts
  * // Execute commands in different modules
- * await runCommand('myapp/web', 'prod', ['backend/build', 'frontend/deploy'], {
+ * await runCommand('myapp/web', 'prod', ['backend:build', 'frontend:deploy'], {
  *   dryRun: false,
  *   verbose: true
  * })

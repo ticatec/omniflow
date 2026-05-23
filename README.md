@@ -46,7 +46,7 @@ npm link
 **Note:** When using `npm run start` to run commands, use `--` to separate arguments to prevent npm from parsing `-e` as `--enjoy-by`:
 
 ```bash
-npm run start -- run -e test omni-gate/platform backend/build
+npm run start -- run -e test omni-gate/platform backend:build
 ```
 
 ## Quick Start
@@ -445,16 +445,16 @@ projects:
 
 ### 6. Create Deployment Script
 
-**Important: Each module MUST have an `omniflow.js` file in its corresponding directory to execute CI/CD.**
+**Important: Each module MUST have a `.omniflow/pipeline.js` file in its corresponding directory to execute CI/CD.**
 
 Script file location rules:
-- With `folder` config: Script at `<projectRoot>/<folder>/omniflow.js`
-- Without `folder` config (empty): Script at `<projectRoot>/omniflow.js`
+- With `folder` config: Script at `<projectRoot>/<folder>/.omniflow/pipeline.js`
+- Without `folder` config (empty): Script at `<projectRoot>/.omniflow/pipeline.js`
 
 Create module script files in the project repository:
 
 ```javascript
-// web/omniflow.js (in module folder directory)
+// web/.omniflow/pipeline.js (in module folder directory)
 export default async function pipeline(ctx, folder, args) {
   const { git, shell } = ctx.actions
   const { env } = ctx
@@ -475,9 +475,11 @@ export default async function pipeline(ctx, folder, args) {
 ```
 my-app.git/
 ├── web/
-│   └── omniflow.js       # Frontend module script (required)
+│   └── .omniflow/
+│       └── pipeline.js    # Frontend module script (required)
 ├── api/
-│   └── omniflow.js       # Backend module script (required)
+│   └── .omniflow/
+│       └── pipeline.js    # Backend module script (required)
 ├── src/
 └── package.json
 ```
@@ -486,12 +488,12 @@ my-app.git/
 ```yaml
 modules:
   - name: frontend
-    folder: web           # Maps to web/omniflow.js
+    folder: web           # Maps to web/.omniflow/pipeline.js
     commands:
       - name: build
       - name: deploy
   - name: backend
-    folder: api           # Maps to api/omniflow.js
+    folder: api           # Maps to api/.omniflow/pipeline.js
     commands:
       - name: build
       - name: deploy
@@ -501,22 +503,22 @@ modules:
 
 ```bash
 # Execute single module command
-omniflow run -e test my-app/platform backend/build
+omniflow run -e test my-app/platform backend:build
 
 # Execute commands across multiple modules
-omniflow run -e test my-app/platform backend/build frontend/deploy backend/push
+omniflow run -e test my-app/platform backend:build frontend:deploy backend:push
 
 # Single module project (empty folder)
-omniflow run -e test my-app/user-service main/build
+omniflow run -e test my-app/user-service main:build
 ```
 
 ## CLI Commands
 
 ```bash
 # Run deployment (using cached config)
-omniflow run -e <environment> <project-path> <module/command> [module/command...]
+omniflow run -e <environment> <project-path> <module:command> [module:command...]
 # project-path supports nested paths, e.g.: my-app/platform
-# Command format: module/command, can execute across multiple modules
+# Command format: module:command, can execute across multiple modules
 
 # List all projects
 omniflow list projects

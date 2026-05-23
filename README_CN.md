@@ -46,7 +46,7 @@ npm link
 **注意：** 如果使用 `npm run start` 运行命令，需要使用 `--` 分隔参数，避免 npm 将 `-e` 解析为 `--enjoy-by`：
 
 ```bash
-npm run start -- run -e test omni-gate/platform backend/build
+npm run start -- run -e test omni-gate/platform backend:build
 ```
 
 ## 快速开始
@@ -471,16 +471,16 @@ projects:
 
 ### 5. 创建部署脚本
 
-**重要：每个模块必须在对应的目录下创建 `omniflow.js` 文件才能执行 CI/CD。**
+**重要：每个模块必须在对应的目录下创建 `.omniflow/pipeline.js` 文件才能执行 CI/CD。**
 
 脚本文件位置规则：
-- 有 `folder` 配置：脚本位于 `<projectRoot>/<folder>/omniflow.js`
-- 无 `folder` 配置（空）：脚本位于 `<projectRoot>/omniflow.js`
+- 有 `folder` 配置：脚本位于 `<projectRoot>/<folder>/.omniflow/pipeline.js`
+- 无 `folder` 配置（空）：脚本位于 `<projectRoot>/.omniflow/pipeline.js`
 
 在项目仓库创建模块脚本文件：
 
 ```javascript
-// web/omniflow.js (模块 folder 目录下)
+// web/.omniflow/pipeline.js (模块 folder 目录下)
 export default async function pipeline(ctx, folder, args) {
   const { git, shell } = ctx.actions
   const { env } = ctx
@@ -501,9 +501,11 @@ export default async function pipeline(ctx, folder, args) {
 ```
 my-app.git/
 ├── web/
-│   └── omniflow.js       # frontend 模块的脚本（必需）
+│   └── .omniflow/
+│       └── pipeline.js    # frontend 模块的脚本（必需）
 ├── api/
-│   └── omniflow.js       # backend 模块的脚本（必需）
+│   └── .omniflow/
+│       └── pipeline.js    # backend 模块的脚本（必需）
 ├── src/
 └── package.json
 ```
@@ -512,12 +514,12 @@ my-app.git/
 ```yaml
 modules:
   - name: frontend
-    folder: web           # 对应 web/omniflow.js
+    folder: web           # 对应 web/.omniflow/pipeline.js
     commands:
       - name: build
       - name: deploy
   - name: backend
-    folder: api           # 对应 api/omniflow.js
+    folder: api           # 对应 api/.omniflow/pipeline.js
     commands:
       - name: build
       - name: deploy
@@ -527,22 +529,22 @@ modules:
 
 ```bash
 # 执行单个模块的命令
-omniflow run -e test my-app/platform backend/build
+omniflow run -e test my-app/platform backend:build
 
 # 跨模块执行多个命令
-omniflow run -e test my-app/platform backend/build frontend/deploy backend/push
+omniflow run -e test my-app/platform backend:build frontend:deploy backend:push
 
 # 单一模块项目（folder 为空）
-omniflow run -e test my-app/user-service main/build
+omniflow run -e test my-app/user-service main:build
 ```
 
 ## CLI 命令
 
 ```bash
 # 运行部署（使用缓存的配置）
-omniflow run -e <environment> <project-path> <module/command> [module/command...]
+omniflow run -e <environment> <project-path> <module:command> [module:command...]
 # project-path 支持嵌套路径，如: my-app/platform
-# 命令格式: module/command，可跨模块执行多个命令
+# 命令格式: module:command，可跨模块执行多个命令
 
 # 列出所有项目
 omniflow list projects
@@ -1015,14 +1017,17 @@ projects:
 ```
 配置仓库 (通过 OMNIFLOW_CONFIG_REPO 指定):
 └── omniflow.yaml              # 统一调度入口
-└── index.js                   # 公共命令库（可选）
+└── bin/
+    └── index.js               # 公共命令库（可选）
 
 项目仓库:
 my-app.git/
 ├── web/                       # 模块目录
-│   └── omniflow.js           # 模块脚本
+│   └── .omniflow/
+│       └── pipeline.js        # 模块脚本
 ├── api/                       # 模块目录
-│   └── omniflow.js           # 模块脚本
+│   └── .omniflow/
+│       └── pipeline.js        # 模块脚本
 ├── src/
 └── package.json
 
@@ -1103,7 +1108,7 @@ environments:
             PORT: "3000"
     - name: backend
       description: 后端服务
-      folder: api             # 脚本位于 api/omniflow.js
+      folder: api             # 脚本位于 api/.omniflow/pipeline.js
       commands:
         - name: build
         - name: deploy
@@ -1134,9 +1139,9 @@ environments:
 
 **脚本位置：**
 
-脚本文件固定为模块目录下的 `omniflow.js`：
-- 有 folder: `<projectRoot>/<folder>/omniflow.js`
-- 无 folder: `<projectRoot>/omniflow.js`
+脚本文件固定为模块目录下的 `.omniflow/pipeline.js`：
+- 有 folder: `<projectRoot>/<folder>/.omniflow/pipeline.js`
+- 无 folder: `<projectRoot>/.omniflow/pipeline.js`
 
 **脚本执行：**
 

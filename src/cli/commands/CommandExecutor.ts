@@ -12,7 +12,7 @@ import dockerActions from "../../core/docker.js"
 import *as utils from "../utils/index.js"
 
 interface ExecuteCommand {
-    fullName: string  // 完整命令名 (module/command)
+    fullName: string  // 完整命令名 (module:command)
     moduleName: string  // 模块名
     commandName: string  // 命令名
     def?: CommandDefinition
@@ -37,7 +37,7 @@ export default class CommandExecutor {
      * @param omniflowHome - Omniflow home directory
      * @param projectKey - Project identifier (e.g., 'team/project')
      * @param envName - Environment name (e.g., 'dev', 'prod')
-     * @param commands - Array of command specs in format 'module/command' or 'command' (uses default module)
+     * @param commands - Array of command specs in format 'module:command' or 'command' (uses default module)
      * @param options - Execution options
      */
     constructor(omniflowHome: string, projectKey: string, envName: string, commands: string[], options: RunOptions) {
@@ -48,9 +48,9 @@ export default class CommandExecutor {
         this.loader = OmniflowConfigLoader.getInstance()
         this.projectRoot = path.join(this.omniflowHome, 'project', ...projectKey.split('/'))
 
-        // 解析命令: 支持格式 "module/command" 或 "command"
+        // 解析命令: 支持格式 "module:command" 或 "command"
         this.commands = commands.map((cmd: string) => {
-            const parts = cmd.split('/')
+            const parts = cmd.split(':')
             if (parts.length === 2) {
                 return { fullName: cmd, moduleName: parts[0], commandName: parts[1] }
             } else {
@@ -117,7 +117,7 @@ export default class CommandExecutor {
         for (const cmd of this.commands) {
             let found = null
             if (cmd.moduleName) {
-                // 格式: module/command - 在指定模块中查找
+                // 格式: module:command - 在指定模块中查找
                 found = findCommandInModule(cmd.moduleName, cmd.commandName)
             } else {
                 // 只有命令名 - 在所有模块中查找
@@ -141,7 +141,7 @@ export default class CommandExecutor {
         if (this.commands.length === 0) {
             console.log(`\n📋 Available commands for ${this.projectKey}:\n`)
             listAvailableCommands()
-            console.log(`\nUsage: omniflow run -e ${this.envName} ${this.projectKey} <module/command> [module/command...]`)
+            console.log(`\nUsage: omniflow run -e ${this.envName} ${this.projectKey} <module:command> [module:command...]`)
             throw new Error("Invalid command name")
         }
         console.log(`\n🚀 Running: ${this.project.name || this.projectKey}`)
@@ -256,8 +256,8 @@ export default class CommandExecutor {
         if (this.options.dryRun) {
             console.log(`[DRY RUN] Would execute command: ${commandDef.name}\n`)
         } else {
-            // 脚本文件路径固定为 commandRoot/omniflow.js
-            const scriptPath = path.join(commandRoot, 'omniflow.js')
+            // 脚本文件路径固定为 commandRoot/.omniflow/pipeline.js
+            const scriptPath = path.join(commandRoot, '.omniflow', 'pipeline.js')
             const resolvedScriptPath = path.resolve(scriptPath)
             const scriptModule = await import(resolvedScriptPath)
 

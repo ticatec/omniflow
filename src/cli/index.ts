@@ -19,7 +19,7 @@ program
   .command('run')
   .description('Run deployment for a project')
   .argument('<project>', 'Project key (e.g., omni-gate/platform)')
-  .argument('<commands...>', 'Commands to run in format "module/command" (e.g., backend/build frontend/deploy)')
+  .argument('<commands...>', 'Commands to run in format "module:command" (e.g., backend:build frontend:deploy)')
   .requiredOption('-e, --environment <env>', 'Environment name (e.g., test, prod)')
   .option('-d, --dry-run', 'Preview mode without execution')
   .option('-v, --verbose', 'Verbose output')
