@@ -34,7 +34,7 @@ import ssh, {type SshConnectionConfig} from './ssh.js';
 
 function createComposeCommands(workDir: string, preCommands: string): string {
     return `cd ${workDir}
-    ${preCommands}
+    ${preCommands}  
     docker compose up -d`
 }
 
@@ -75,12 +75,12 @@ async function compose(targetDir: string, tplFile: string, preCommands: string):
 
     const composeCmd = createComposeCommands(targetDir, preCommands);
 
+    console.log('docker compose command:', composeCmd)
+
     // Execute docker-compose
     console.log(`  🚀 Starting docker-compose...`);
     try {
-        await $`cd ${targetDir}
-        ${composeCmd}
-        `;
+        await $`${composeCmd}`;
         console.log(`  ✓ Docker compose completed`);
     } catch (error: any) {
         throw new Error(`Docker compose failed: ${error.message}`);
