@@ -64,39 +64,48 @@ export function formatDockerEnv(opts: {
 
 /**
  * Merge and format docker environment variables
- * Merges multiple DOCKER_ENV arrays and formats them for docker-compose
- * @param opts.envArrays - Array of DOCKER_ENV arrays from config
+ * Supports both array format ['- KEY=VALUE', ...] and object format {KEY: VALUE, ...}
+ * Merges multiple sources and formats them for docker-compose
+ * @param opts.envInputs - Array of env inputs (arrays, objects, or undefined)
  * @param opts.indent - Indentation string (default: '    ' for four spaces)
  * @returns Formatted YAML string for docker-compose environment section
  *
  * @example
- * mergeDockerEnv({
- *   envArrays: [
- *     ['- UID=${MY_UID}', '- GID=${MY_GID}'],  // from omniflow.env
- *     ['- CONFIG_FILE=omni/omniflow.yaml']        // from command
+ * mergeComposeEnv({
+ *   envInputs: [
+ *     ['- UID=${MY_UID}', '- GID=${MY_GID}'],  // array format
+ *     {CONFIG_MODE: 'consul', CONSUL_PORT: '8500'}  // object format
  *   ]
  * })
  * // Returns:
- * // '    - UID=${MY_UID}\n    - GID=${MY_GID}\n    - CONFIG_FILE=omni/omniflow.yaml'
+ * // '    - UID=${MY_UID}\n    - GID=${MY_GID}\n    - CONFIG_MODE=consul\n    - CONSUL_PORT=8500'
  */
-export function mergeDockerEnv(opts: {
-    envArrays: (string[] | undefined)[]
+export function mergeComposeEnv(opts: {
+    envInputs: (string[] | Record<string, string> | undefined)[]
     indent?: string
 }): string {
-    const {envArrays, indent = '    '} = opts
-
-    // Merge all arrays, remove duplicates (first occurrence wins)
+    const {envInputs, indent = '    '} = opts
     const merged = new Map<string, string>()
 
-    for (const arr of envArrays) {
-        if (!arr) continue
-        for (const item of arr) {
-            // Parse "- KEY=VALUE" format
-            const match = item.match(/^-\s*(.+?)=(.+)$/)
-            if (match) {
-                const [, key, value] = match
+    for (const input of envInputs) {
+        if (!input) continue
+
+        if (Array.isArray(input)) {
+            // Handle array format: ['- KEY=VALUE', ...]
+            for (const item of input) {
+                const match = item.match(/^-\s*(.+?)=(.+)$/)
+                if (match) {
+                    const [, key, value] = match
+                    if (!merged.has(key)) {
+                        merged.set(key, value)
+                    }
+                }
+            }
+        } else if (typeof input === 'object') {
+            // Handle object format: {KEY: VALUE, ...}
+            for (const [key, value] of Object.entries(input)) {
                 if (!merged.has(key)) {
-                    merged.set(key, value)
+                    merged.set(key, String(value))
                 }
             }
         }
