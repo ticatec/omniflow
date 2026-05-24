@@ -144,6 +144,11 @@ config.git/
 
 在配置仓库的 `bin/` 目录下创建 `index.js`，定义可被所有项目使用的公共命令。
 
+**工作原理：**
+- 在配置仓库中编辑 `bin/index.js`
+- 运行 `omniflow update` 将文件复制到本地 `plugins/` 目录
+- Omniflow 从 `plugins/index.js` 加载命令（这样可以共享 omniflow 的依赖）
+
 **文件格式要求：**
 - 位置：配置仓库的 `bin/index.js`
 - 必须导出一个默认函数 `export default function loadCommands(actions, utils)`
@@ -175,12 +180,11 @@ config.git/
  *   - shell: { exec(cmd) } - shell 命令执行
  *   - git: { clone(opts) } - git 操作
  *   - node: { install, build, execute, getPackageInfo, ... } - Node.js 操作
- *   - ssh: { exec, scpFile } - SSH/SCP 操作
+ *   - ssh: { exec, cp } - SSH/SCP 操作
  *   - web: { build(opts) } - Web 前端构建
  *   - docker: { compose, composeOnRemote } - Docker Compose 操作
  *
  * utils 包含:
- *   - getPackageVersion({ workspace, subdir })
  *   - formatTemplateFile({ sourceFile, targetFile, variables })
  *   - formatTemplate(content, variables)
  *   - mergeComposeEnv({ envInputs, indent })
@@ -259,7 +263,7 @@ export default function loadCommands(actions, utils) {
     // 上传到远程服务器
     const filename = archivePath.split('/').pop()
     const remoteTarPath = `/tmp/${filename}`
-    await ssh.scpFile(sshConfig, archivePath, remoteTarPath)
+    await ssh.cp(sshConfig, archivePath, remoteTarPath)
 
     // 远程解压并部署
     await ssh.exec(
@@ -331,31 +335,24 @@ async function build(ctx, folder, args) {
 export { build }
 ```
 
-  console.log(`构建版本: ${version}`)
-  console.log(`归档文件: ${tarPath}`)
-}
-```
-
 **可用的 actions：**
 
 | 操作 | 说明 | 方法 |
 |------|------|------|
 | `shell` | Shell 命令执行 | `exec(cmd)` |
-| `git` | Git 操作 | `clone(opts)` |
-| `node` | Node.js 操作 | `install`, `build`, `execute`, `getPackageInfo`, `getPackageVersion`, `getPackageName` |
-| `ssh` | SSH/SCP 操作 | `exec(config, command, remoteDir)`, `scpFile(config, srcFile, targetFile)` |
+| `node` | Node.js 操作 | `install`, `build`, `execute`, `getPackageInfo` |
+| `ssh` | SSH/SCP 操作 | `exec(config, command, remoteDir)`, `cp(config, srcFile, targetFolder)` |
 | `web` | Web 前端构建 | `build(opts)` |
-| `docker` | Docker Compose | `compose(workDir, tplFile, commands, preCommands)`, `composeOnRemote(...)` |
+| `docker` | Docker Compose | `compose(targetDir, tplFile, preCommands)`, `composeOnRemote(sshConfig, targetDir, tplFile, preCommands)` |
 
 **可用的 utils：**
 
 | 方法 | 说明 |
 |------|------|
-| `getPackageVersion({ workspace, subdir })` | 获取 package.json 版本 |
-| `formatTemplateFile({ sourceFile, targetFile, variables })` | 格式化模板文件 |
-| `formatTemplate(content, variables)` | 格式化模板字符串 |
+| `formatTemplateFile({ sourceFile, targetFile, variables })` | 格式化模板文件并写入 |
+| `formatTemplate(content, variables)` | 格式化模板字符串，返回结果 |
 | `mergeComposeEnv({ envInputs, indent })` | 合并 Docker Compose 环境变量 |
-| `tar({ sourceDir, filename, outputDir })` | 打包目录为 tar.gz |
+| `tar({ sourceDir, filename, outputDir, zip })` | 打包目录为 tar 或 tar.gz |
 
 ### 4. 编辑配置文件
 
@@ -636,9 +633,10 @@ export { build_docker, deploy }
 
   // 工具函数 (utils)
   utils: {
-    getPackageVersion,      // 获取 package.json 版本
     formatTemplateFile,        // 替换模板变量
-    tar                     // 打包目录
+    formatTemplate,            // 格式化模板字符串
+    mergeComposeEnv,           // 合并 Docker Compose 环境变量
+    tar                        // 打包目录
   },
 
   // 合并的环境变量 (omniflow.env + envConfig.vars)
@@ -680,7 +678,7 @@ await ctx.actions.ssh.exec(
   'ls -la',
   '/opt/app'  // remoteDir (可选)
 )
-await ctx.actions.ssh.scpFile(
+await ctx.actions.ssh.cp(
   { host: '192.168.1.100', user: 'deploy', privateKeyFile: '~/.ssh/key' },
   './app.tar.gz',
   '/opt/app/app.tar.gz'
@@ -704,7 +702,6 @@ await ctx.actions.docker.compose('/path/to/project', 'docker-compose.yml', 'up -
 | 方法 | 说明 |
 |------|------|
 | `shell.exec(cmd)` | 执行 shell 命令 |
-| `git.clone(opts)` | 克隆 git 仓库 |
 | `node.*` | Node.js 操作（见下文） |
 | `ssh.*` | SSH/SCP 操作（见下文） |
 | `web.*` | Web 前端构建（见下文） |
@@ -714,8 +711,6 @@ await ctx.actions.docker.compose('/path/to/project', 'docker-compose.yml', 'up -
 
 | 方法 | 说明 |
 |------|------|
-| `node.getPackageVersion(packageDir)` | 获取 package.json 版本 |
-| `node.getPackageName(packageDir)` | 获取 package.json 名称 |
 | `node.getPackageInfo(packageDir)` | 获取名称和版本 |
 | `node.install(packageDir, pm, flags)` | 安装依赖 |
 | `node.build(packageDir, pm, flags)` | 构建项目 |
@@ -743,7 +738,7 @@ await ctx.actions.node.execute(ctx.projectRoot, 'pnpm', 'test', ['--coverage'])
 | 方法 | 说明 |
 |------|------|
 | `ssh.exec(sshConfig, command, remoteDir)` | 在远程服务器执行命令 |
-| `ssh.scpFile(sshConfig, srcFile, targetFile)` | 复制文件到远程服务器 |
+| `ssh.cp(sshConfig, srcFile, targetFolder)` | 复制文件到远程服务器 |
 
 **sshConfig 结构：**
 
@@ -770,7 +765,7 @@ const result = await ctx.actions.ssh.exec(
 console.log(result.stdout)
 
 // 复制文件到远程
-await ctx.actions.ssh.scpFile(
+await ctx.actions.ssh.cp(
   { host: '192.168.1.100', user: 'deploy', privateKeyFile: '~/.ssh/id_rsa' },
   './app.tar.gz',
   '/opt/app/app.tar.gz'
@@ -814,8 +809,8 @@ const archivePath = await ctx.actions.web.build({
 
 | 方法 | 说明 |
 |------|------|
-| `docker.compose(workDir, tplFile, commands, preCommands)` | 本地 Docker Compose |
-| `docker.composeOnRemote(sshConfig, targetDir, tplFile, commands, preCommands)` | 远程 Docker Compose |
+| `docker.compose(targetDir, tplFile, preCommands)` | 本地 Docker Compose |
+| `docker.composeOnRemote(sshConfig, targetDir, tplFile, preCommands)` | 远程 Docker Compose |
 
 **使用示例：**
 
@@ -824,7 +819,6 @@ const archivePath = await ctx.actions.web.build({
 await ctx.actions.docker.compose(
   '/path/to/project',
   'docker-compose.yml',
-  'up -d',           // docker-compose 命令
   'mkdir -p data'    // 预处理命令（可选）
 )
 
@@ -833,37 +827,19 @@ await ctx.actions.docker.composeOnRemote(
   { host: '192.168.1.100', user: 'deploy', privateKeyFile: '~/.ssh/key' },
   '/opt/app',
   'docker-compose.yml',
-  'up -d --build'
+  'mkdir -p /opt/data'  // 预处理命令（可选）
 )
-console.log(`${info.name}@${info.version}`)
-
-// 安装依赖
-await ctx.actions.node.install({
-  workspace: ctx.projectRoot,
-  pm: 'pnpm',
-  flags: ['--frozen-lockfile']
-})
-
-// 构建
-await ctx.actions.node.build({
-  workspace: ctx.projectRoot,
-  pm: 'pnpm'
+```
 })
 
 // 执行自定义命令
-await ctx.actions.node.execute({
-  workspace: ctx.projectRoot,
-  pm: 'pnpm',
-  command: 'test',
-  flags: ['--coverage']
-})
+await ctx.actions.node.execute(ctx.projectRoot, 'pnpm', 'test', ['--coverage'])
 ```
 
 ### ctx.utils - 工具函数
 
 | 方法 | 说明 |
 |------|------|
-| `getPackageVersion({ workspace, subdir })` | 获取 package.json 中的版本号 |
 | `formatTemplateFile({ sourceFile, targetFile, variables })` | 格式化模板文件并写入 |
 | `formatTemplate(content, variables)` | 格式化模板字符串，返回结果 |
 | `mergeComposeEnv({ envInputs, indent })` | 合并 Docker Compose 环境变量 |
@@ -918,11 +894,9 @@ const envYaml = ctx.utils.mergeComposeEnv({
 **使用示例：**
 
 ```javascript
-// 获取版本号
-const version = await ctx.utils.getPackageVersion({
-  workspace: ctx.projectRoot,
-  subdir: 'omni_sse'  // 可选子目录
-})
+// 获取版本号（使用 node 操作）
+const pkgInfo = await ctx.actions.node.getPackageInfo(ctx.projectRoot)
+const version = pkgInfo.version
 
 // 格式化模板文件
 await ctx.utils.formatTemplateFile({
@@ -953,31 +927,15 @@ await ctx.utils.tar({
 // 生成: ./releases/my-app-1.0.0.tar
 ```
 
-### ctx.environment - 环境属性
+### ctx.environment - 环境名称
 
-| 属性 | 说明 |
-|------|------|
-| `name` | 环境名称（如 'test'、'prod'） |
-| `config` | 完整的环境配置对象 |
-| `config.branch` | 该环境的目标分支 |
-| `config.merge_from` | 合并来源分支（可选） |
-| `config.vars` | 环境特定变量 |
-| `config.description` | 环境描述（可选） |
+`environment` 属性是一个字符串，包含当前环境的名称（如 'test'、'prod'）。
 
 **使用示例：**
 
 ```javascript
 // 获取环境名称
-const envName = ctx.environment.name  // 'test' 或 'prod'
-
-// 获取环境分支
-const branch = ctx.environment.config.branch  // 'main-test'
-
-// 获取合并来源（如果配置了）
-const mergeFrom = ctx.environment.config.merge_from  // 'dev-main'
-
-// 获取环境特定变量
-const envVars = ctx.environment.config.vars  // { DEPLOY_HOST: 'test.example.com' }
+const envName = ctx.environment  // 'test' 或 'prod'
 
 // 根据环境执行不同逻辑
 if (envName === 'prod') {
@@ -987,10 +945,6 @@ if (envName === 'prod') {
   console.log('🧪 部署到测试环境...')
   // 测试环境特定逻辑
 }
-
-// 通过环境变量访问（另一种方式）
-const envName2 = ctx.env.ENVIRONMENT  // 同 ctx.environment.name
-const branch2 = ctx.env.BRANCH        // 同 ctx.environment.config.branch
 ```
 
 ## 变量优先级

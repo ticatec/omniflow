@@ -133,6 +133,11 @@ Example:
 
 Create `bin/index.js` in the configuration repository to define common commands that can be used by all projects.
 
+**How it works:**
+- Edit `bin/index.js` in your configuration repository
+- Run `omniflow update` to copy the file to the local `plugins/` directory
+- Omniflow loads commands from `plugins/index.js` (this allows sharing omniflow's dependencies)
+
 **File Format Requirements:**
 - Location: `bin/index.js` in the config repository
 - Must export a default function: `export default function loadCommands(actions, utils)`
@@ -160,13 +165,14 @@ Create `bin/index.js` in the configuration repository to define common commands 
  *   - shell: { exec(cmd) } - shell command execution
  *   - git: { clone(opts) } - git operations
  *   - node: { install, build, execute, getPackageInfo, ... } - Node.js operations
- *   - ssh: { exec, scpFile } - SSH/SCP operations
+ *   - ssh: { exec, cp } - SSH/SCP operations
  *   - web: { build(opts) } - Web frontend build
  *   - docker: { compose, composeOnRemote } - Docker Compose operations
  *
  * utils includes:
- *   - getPackageVersion({ workspace, subdir })
  *   - formatTemplateFile({ sourceFile, targetFile, variables })
+ *   - formatTemplate(content, variables)
+ *   - mergeComposeEnv({ envInputs, indent })
  *   - tar({ sourceDir, filename, outputDir })
  */
 export default function loadCommands(actions, utils) {
@@ -242,7 +248,7 @@ export default function loadCommands(actions, utils) {
     // Upload to remote server
     const filename = archivePath.split('/').pop()
     const remoteTarPath = `/tmp/${filename}`
-    await ssh.scpFile(sshConfig, archivePath, remoteTarPath)
+    await ssh.cp(sshConfig, archivePath, remoteTarPath)
 
     // Remote extract and deploy
     await ssh.exec(
@@ -316,19 +322,19 @@ export default async function pipeline(ctx, folder, args) {
 | Action | Description | Methods |
 |--------|-------------|---------|
 | `shell` | Shell command execution | `exec(cmd)` |
-| `git` | Git operations | `clone(opts)` |
-| `node` | Node.js operations | `install`, `build`, `execute`, `getPackageInfo`, `getPackageVersion`, `getPackageName` |
-| `ssh` | SSH/SCP operations | `exec(config, command, remoteDir)`, `scpFile(config, srcFile, targetFile)` |
+| `node` | Node.js operations | `install`, `build`, `execute`, `getPackageInfo` |
+| `ssh` | SSH/SCP operations | `exec(config, command, remoteDir)`, `cp(config, srcFile, targetFolder)` |
 | `web` | Web frontend build | `build(opts)` |
-| `docker` | Docker Compose | `compose(workDir, tplFile, commands, preCommands)`, `composeOnRemote(...)` |
+| `docker` | Docker Compose | `compose(targetDir, tplFile, preCommands)`, `composeOnRemote(sshConfig, targetDir, tplFile, preCommands)` |
 
 **Available utils:**
 
 | Method | Description |
 |--------|-------------|
-| `getPackageVersion({ workspace, subdir })` | Get version from package.json |
 | `formatTemplateFile({ sourceFile, targetFile, variables })` | Replace template variables |
-| `tar({ sourceDir, filename, outputDir })` | Pack directory into tar.gz |
+| `formatTemplate(content, variables)` | Format template string, return result |
+| `mergeComposeEnv({ envInputs, indent })` | Merge Docker Compose environment variables |
+| `tar({ sourceDir, filename, outputDir, zip })` | Pack directory into tar or tar.gz |
 
 ### 4. Create Configuration Repository
 
@@ -601,9 +607,10 @@ export default async function deployScript(context, folder, appName, args) {
 
   // Utils
   utils: {
-    getPackageVersion,      // Get package.json version
     formatTemplateFile,        // Replace template variables
-    tar                     // Pack directory
+    formatTemplate,            // Format template string
+    mergeComposeEnv,           // Merge Docker Compose environment variables
+    tar                        // Pack directory
   },
 
   // Merged environment variables (omniflow.env + envConfig.vars)
@@ -645,7 +652,7 @@ await ctx.actions.ssh.exec(
   'ls -la',
   '/opt/app'  // remoteDir (optional)
 )
-await ctx.actions.ssh.scpFile(
+await ctx.actions.ssh.cp(
   { host: '192.168.1.100', user: 'deploy', privateKeyFile: '~/.ssh/key' },
   './app.tar.gz',
   '/opt/app/app.tar.gz'
@@ -659,8 +666,16 @@ const archivePath = await ctx.actions.web.build({
   outputDir: './releases'
 })
 
-// Docker Compose
-await ctx.actions.docker.compose('/path/to/project', 'docker-compose.yml', 'up -d', 'mkdir -p data')
+// Docker Compose (local)
+await ctx.actions.docker.compose('/path/to/project', 'docker-compose.yml', 'mkdir -p data')
+
+// Docker Compose (remote)
+await ctx.actions.docker.composeOnRemote(
+  { host: '192.168.1.100', user: 'deploy', privateKeyFile: '~/.ssh/key' },
+  '/opt/app',
+  'docker-compose.yml',
+  'mkdir -p /opt/data'
+)
 ```
 ```
 
@@ -669,13 +684,15 @@ await ctx.actions.docker.compose('/path/to/project', 'docker-compose.yml', 'up -
 | Method | Description |
 |--------|-------------|
 | `shell.exec(cmd)` | Execute shell command |
-| `git.clone(opts)` | Clone git repository |
+| `node.*` | Node.js operations (see below) |
+| `ssh.*` | SSH/SCP operations (see below) |
+| `web.*` | Web frontend build (see below) |
+| `docker.*` | Docker Compose operations (see below) |
 
 ### ctx.utils - Utility Functions
 
 | Method | Description |
 |--------|-------------|
-| `getPackageVersion({ workspace, subdir })` | Get version from package.json |
 | `formatTemplateFile({ sourceFile, targetFile, variables })` | Format template file and write |
 | `formatTemplate(content, variables)` | Format template string, return result |
 | `mergeComposeEnv({ envInputs, indent })` | Merge Docker Compose environment variables |
@@ -715,11 +732,9 @@ const result = ctx.utils.formatTemplate(content, {
 **Usage Example:**
 
 ```javascript
-// Get package version
-const version = await ctx.utils.getPackageVersion({
-  workspace: ctx.projectRoot,
-  subdir: 'omni_sse'  // optional subdirectory
-})
+// Get package version (using node action)
+const pkgInfo = await ctx.actions.node.getPackageInfo(ctx.projectRoot)
+const version = pkgInfo.version
 
 // Format template file
 await ctx.utils.formatTemplateFile({
@@ -741,31 +756,15 @@ await ctx.utils.tar({
 // Generates: ./releases/my-app-1.0.0.tar.gz
 ```
 
-### ctx.environment - Environment Attributes
+### ctx.environment - Environment Name
 
-| Attribute | Description |
-|-----------|-------------|
-| `name` | Environment name (e.g., 'test', 'prod') |
-| `config` | Full environment configuration object |
-| `config.branch` | Target branch for this environment |
-| `config.merge_from` | Source branch for merge (optional) |
-| `config.vars` | Environment-specific variables |
-| `config.description` | Environment description (optional) |
+The `environment` property is a string containing the environment name (e.g., 'test', 'prod').
 
 **Usage Example:**
 
 ```javascript
 // Get environment name
-const envName = ctx.environment.name  // 'test' or 'prod'
-
-// Get environment branch
-const branch = ctx.environment.config.branch  // 'main-test'
-
-// Get merge source (if configured)
-const mergeFrom = ctx.environment.config.merge_from  // 'dev-main'
-
-// Get environment-specific variables
-const envVars = ctx.environment.config.vars  // { DEPLOY_HOST: 'test.example.com' }
+const envName = ctx.environment  // 'test' or 'prod'
 
 // Execute different logic based on environment
 if (envName === 'prod') {
@@ -775,10 +774,6 @@ if (envName === 'prod') {
   console.log('🧪 Deploying to test environment...')
   // Test-specific logic
 }
-
-// Access via environment variable (alternative)
-const envName2 = ctx.env.ENVIRONMENT  // Same as ctx.environment.name
-const branch2 = ctx.env.BRANCH        // Same as ctx.environment.config.branch
 ```
 
 ## Variable Priority
