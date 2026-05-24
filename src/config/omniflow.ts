@@ -292,14 +292,31 @@ export class OmniflowConfigLoader {
     }
 
     /**
-     * Copy plugin files from config to plugins directory
+     * Copy plugin files from config to omniflow's plugins directory
      * This allows plugins to share omniflow's dependencies
      */
     private async copyPlugins(configDir: string): Promise<void> {
-        const pluginsDir = path.join(process.cwd(), 'plugins')
+        const OMNIFLOW_HOME = await this.settings.getOmniflowHome()
 
-        // Create plugins directory
-        await fs.mkdir(pluginsDir, {recursive: true});
+        // Try omniflow installation directory first (for shared dependencies)
+        const omniflowDistDir = path.dirname(new URL(import.meta.url).pathname)
+        let pluginsDir = path.join(omniflowDistDir, 'plugins')
+        let useOmniDir = true
+
+        // Check if we can write to omniflow installation directory
+        try {
+            await fs.mkdir(pluginsDir, {recursive: true})
+            // Test write permission
+            const testFile = path.join(pluginsDir, '.write_test')
+            await fs.writeFile(testFile, 'test')
+            await fs.unlink(testFile)
+        } catch {
+            // Fall back to OMNIFLOW_HOME/plugins
+            console.log('   Note: Cannot write to omniflow install directory, using OMNIFLOW_HOME/plugins')
+            pluginsDir = path.join(OMNIFLOW_HOME, 'plugins')
+            await fs.mkdir(pluginsDir, {recursive: true})
+            useOmniDir = false
+        }
 
         const commandsFolder = path.join(configDir, 'bin')
 
@@ -311,12 +328,17 @@ export class OmniflowConfigLoader {
             return
         }
 
-        console.log(`   Copying ${jsFiles.length} plugin file(s) to plugins directory...`)
+        const location = useOmniDir ? 'omniflow plugins' : 'OMNIFLOW_HOME/plugins'
+        console.log(`   Copying ${jsFiles.length} plugin file(s) to ${location}...`)
 
         for (const file of jsFiles) {
             const srcPath = path.join(configDir, 'bin', file)
             const destPath = path.join(pluginsDir, file)
             await fs.copyFile(srcPath, destPath)
+        }
+
+        if (!useOmniDir) {
+            console.log('   ⚠️  Plugins are in OMNIFLOW_HOME/plugins - ensure dependencies are installed there')
         }
     }
 
@@ -417,7 +439,7 @@ export class OmniflowConfigLoader {
 
     /**
      * Load index.js from omniflow plugins directory
-     * Plugin files are copied from config to plugins during update/init
+     * Plugin files are copied from config to omniflow's plugins directory during update/init
      * This allows plugins to share omniflow's dependencies
      *
      * The file must export a default function:
@@ -428,32 +450,44 @@ export class OmniflowConfigLoader {
      * Returns the commands object or empty object if file doesn't exist
      */
     async loadCommands(actions: any): Promise<Object> {
-        const pluginsDir = path.join(process.cwd(), 'plugins')
-        const commandsPath = path.join(pluginsDir, 'index.js')
+        const OMNIFLOW_HOME = await this.settings.getOmniflowHome()
 
-        // Check if file exists
-        try {
-            await fs.access(commandsPath)
-        } catch {
-            // File doesn't exist, return empty object
-            return {}
-        }
+        // Try omniflow installation directory first, then OMNIFLOW_HOME/plugins
+        const omniflowDistDir = path.dirname(new URL(import.meta.url).pathname)
+        const possibleDirs = [
+            path.join(omniflowDistDir, 'plugins'),
+            path.join(OMNIFLOW_HOME, 'plugins')
+        ]
 
-        // File exists, load and call loadCommands function
-        try {
-            console.log(`Loading commands from ${commandsPath}...`)
-            const commandsUrl = pathToFileURL(commandsPath).href
-            const commandsModule = await import(commandsUrl)
+        for (const pluginsDir of possibleDirs) {
+            const commandsPath = path.join(pluginsDir, 'index.js')
 
-            if (typeof commandsModule.default !== 'function') {
-                throw new Error(`index.js must export a default function`)
+            // Check if file exists
+            try {
+                await fs.access(commandsPath)
+            } catch {
+                continue // Try next directory
             }
 
-            const commands = commandsModule.default(actions, utils)
-            return commands || {}
-        } catch (error) {
-            throw new Error(`Failed to load commands from ${commandsPath}: ${(error as Error).message}`)
+            // File exists, load and call loadCommands function
+            try {
+                console.log(`Loading commands from ${commandsPath}...`)
+                const commandsUrl = pathToFileURL(commandsPath).href
+                const commandsModule = await import(commandsUrl)
+
+                if (typeof commandsModule.default !== 'function') {
+                    throw new Error(`index.js must export a default function`)
+                }
+
+                const commands = commandsModule.default(actions, utils)
+                return commands || {}
+            } catch (error) {
+                throw new Error(`Failed to load commands from ${commandsPath}: ${(error as Error).message}`)
+            }
         }
+
+        // No plugins found
+        return {}
     }
 }
 

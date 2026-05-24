@@ -57,7 +57,7 @@ async function getPackageInfo(packageDir: string): Promise<{
     const packageJsonPath = path.join(packageDir, 'package.json');
     const content = await fs.readFile(packageJsonPath, 'utf-8');
     const packageJson = JSON.parse(content);
-    const name = packageJson.name;
+    let name = packageJson.name;
     const version = packageJson.version;
     const fullName = packageJson.name;
 
@@ -66,6 +66,7 @@ async function getPackageInfo(packageDir: string): Promise<{
         const parts = name.split('/');
         if (parts.length >= 2) {
             const namespace = parts[0].slice(1); // Remove '@' prefix
+            name = parts[1];
             return {name, version, fullName, namespace};
         }
     }
