@@ -961,6 +961,10 @@ if (envName === 'prod') {
 ```
 omniflow.env (全局环境变量)
     ↓
+parent folders.vars (父文件夹变量)
+    ↓
+project.vars (项目变量)
+    ↓
 environments[].vars (环境变量)
 ```
 
@@ -978,23 +982,38 @@ omniflow:
       retries: 3
 
 projects:
-  - name: user-service
-    environments:
-      - name: test
+  - name: my-app                    # 文件夹
+    vars:
+      APP_TYPE: web                 # 文件夹变量，子项目继承
+    items:
+      - name: user-service          # 项目
         vars:
-          DEPLOY_HOST: test.example.com
+          SERVICE_NAME: user        # 项目变量
           deploy_config:            # 深度合并
-            timeout: 60             # 只覆盖 timeout，保留 retries: 3
-      - name: prod
-        vars:
-          DEPLOY_HOST: prod.example.com
+            timeout: 120            # 覆盖全局的 timeout，保留 retries: 3
+        environments:
+          - name: test
+            vars:
+              DEPLOY_HOST: test.example.com
+              deploy_config:        # 再次深度合并
+                timeout: 60         # 覆盖项目的 timeout，保留 retries: 3
+          - name: prod
+            vars:
+              DEPLOY_HOST: prod.example.com
 ```
 
-最终 test 环境的 `deploy_config` 为：
+最终 test 环境的合并结果：
 ```javascript
 {
-  timeout: 60,    // 被环境变量覆盖
-  retries: 3      // 从全局变量继承
+  REGISTRY: 'docker.example.com',   // 从 omniflow.env 继承
+  NAMESPACE: 'company',             // 从 omniflow.env 继承
+  APP_TYPE: 'web',                  // 从文件夹 vars 继承
+  SERVICE_NAME: 'user',             // 从项目 vars 继承
+  DEPLOY_HOST: 'test.example.com',  // 环境变量
+  deploy_config: {
+    timeout: 60,    // 环境变量覆盖
+    retries: 3      // 从 omniflow.env 继承
+  }
 }
 ```
 
