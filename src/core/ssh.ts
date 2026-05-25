@@ -6,24 +6,22 @@
  * ```ts
  * import ssh from './ssh.js'
  *
- * // Execute remote command(s)
- * const result = await ssh.exec({
+ * // Set SSH config map first
+ * ssh.setSshConfigMap({
+ *   'my-server': {
+ *     server: '192.168.1.100',
  *     user: 'deploy',
- *     privateKey: '-----BEGIN RSA PRIVATE KEY-----...',
- *     host: '192.168.1.100',
- *     command: 'ls -la',
- *     remoteDir: '/var/www'
+ *     private_key_file: '/path/to/id_rsa',
+ *     port: 22
+ *   }
  * })
+ *
+ * // Execute remote command(s) using key
+ * const result = await ssh.exec('my-server', 'ls -la', '/var/www')
  * console.log(result.stdout)
  *
- * // Copy file to remote
- * await ssh.scp({
- *     user: 'deploy',
- *     privateKeyFile: '/path/to/id_rsa',
- *     host: '192.168.1.100',
- *     localPath: './app.tar.gz',
- *     remotePath: '/var/www/'
- * })
+ * // Copy file to remote using key
+ * await ssh.cp('my-server', './app.tar.gz', '/var/www/')
  * ```
  */
 
@@ -31,6 +29,16 @@ import { $ } from './shell.js'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { tmpdir } from 'os'
+
+/**
+ * SSH server config from omniflow config
+ */
+export interface SshServerConfig {
+    server: string
+    user: string
+    private_key_file?: string
+    port?: number
+}
 
 /**
  * SSH authentication configuration
@@ -57,32 +65,64 @@ export interface SshConnectionConfig extends SshAuthConfig {
     port?: number
 }
 
+// SSH config storage
+let sshConfigMap: Record<string, SshServerConfig> = {}
+
+/**
+ * Set SSH configuration map
+ * @param config - SSH configuration map from omniflow config
+ */
+export function setSshConfigMap(config: Record<string, SshServerConfig> | undefined): void {
+    sshConfigMap = config || {}
+}
+
+/**
+ * Get SSH connection config by key
+ * Converts SshServerConfig to SshConnectionConfig
+ * @param key - SSH server key
+ * @returns SSH connection configuration
+ * @throws Error if key not found
+ */
+function getSshConnectionConfig(key: string): SshConnectionConfig {
+    const config = sshConfigMap[key]
+    if (!config) {
+        throw new Error(`SSH config not found for key: ${key}`)
+    }
+    return {
+        host: config.server,
+        user: config.user,
+        privateKeyFile: config.private_key_file,
+        port: config.port
+    }
+}
+
 
 /**
  * Copy file to remote via SCP
  *
- * @param sshConfig - SSH connection configuration
+ * @param sshKey - SSH server key from config
  * @param srcFile - Local source file path (full path with filename)
  * @param targetFolder - Remote target folder path
  *
  * @example
  * ```ts
  * await ssh.cp(
- *   { host: '192.168.1.100', user: 'deploy', privateKeyFile: '/path/to/key' },
+ *   'my-server',
  *   './releases/app.tar.gz',
  *   '/var/www/releases'
  * )
  * // Result: ./releases/app.tar.gz -> deploy@192.168.1.100:/var/www/releases/app.tar.gz
  * ```
  */
-async function cp(sshConfig: SshConnectionConfig, srcFile: string, targetFolder: string): Promise<void> {
+async function cp(sshKey: string, srcFile: string, targetFolder: string): Promise<void> {
+    const sshConfig = getSshConnectionConfig(sshKey)
     const { host, port } = sshConfig
 
     console.log(`  📤 SCP: ${srcFile} -> ${sshConfig.user}@${host}:${port || 22}:${targetFolder}/`)
 
     // Create target directory if it doesn't exist
     console.log(`  📁 Ensuring remote directory exists: ${targetFolder}`)
-    await exec(sshConfig, `mkdir -p ${targetFolder}`)
+    await exec(sshKey, `mkdir -p ${targetFolder}`)
 
     // Build SCP command as string for bash -c
     let keyFileArg = ''
@@ -124,7 +164,7 @@ async function createTempKeyFile(keyContent: string): Promise<string> {
 /**
  * Execute command(s) on remote server via SSH
  *
- * @param sshConfig - SSH connection configuration
+ * @param sshKey - SSH server key from config
  * @param command - Command(s) to execute (single line or multi-line string)
  * @param remoteDir - Optional remote working directory
  * @returns Result containing stdout, stderr, and exit code
@@ -132,17 +172,10 @@ async function createTempKeyFile(keyContent: string): Promise<string> {
  * @example
  * ```ts
  * // Single command
- * const result = await ssh.exec(
- *   { host: '192.168.1.100', user: 'deploy', privateKeyFile: '/path/to/key' },
- *   'ls -la'
- * )
+ * const result = await ssh.exec('my-server', 'ls -la')
  *
  * // With remote directory
- * const result = await ssh.exec(
- *   { host: '192.168.1.100', user: 'deploy', privateKeyFile: '/path/to/key' },
- *   'pwd',
- *   '/var/www'
- * )
+ * const result = await ssh.exec('my-server', 'pwd', '/var/www')
  *
  * console.log(result.stdout)
  * console.log(result.stderr)
@@ -150,10 +183,11 @@ async function createTempKeyFile(keyContent: string): Promise<string> {
  * ```
  */
 async function exec(
-    sshConfig: SshConnectionConfig,
+    sshKey: string,
     command: string,
     remoteDir?: string
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    const sshConfig = getSshConnectionConfig(sshKey)
     const { host, port } = sshConfig
 
     console.log(`  🔧 SSH Exec: ${sshConfig.user}@${host}:${port || 22}`)
@@ -206,5 +240,6 @@ async function exec(
 
 export default {
     exec,
-    cp
+    cp,
+    setSshConfigMap
 }

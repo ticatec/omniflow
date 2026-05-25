@@ -202,12 +202,12 @@ export default function loadCommands(actions, utils, mergedVars) {
    * 远程部署应用
    * 使用 SSH 在远程服务器执行部署命令
    */
-  async function remoteDeploy({ host, user, privateKeyFile, remotePath, command, port = 22 }) {
-    console.log(`🚀 部署到 ${user}@${host}:${remotePath}`)
+  async function remoteDeploy({ sshKey, remotePath, command }) {
+    console.log(`🚀 部署到 ${sshKey}`)
 
-    // 使用 omniflow 提供的 ssh 操作
+    // 使用 omniflow 提供的 ssh 操作（sshKey 对应 omniflow.yaml 中 ssh 配置的 key）
     const result = await ssh.exec(
-      { host, user, privateKeyFile, port },
+      sshKey,
       `cd ${remotePath} && ${command}`
     )
 
@@ -252,7 +252,7 @@ export default function loadCommands(actions, utils, mergedVars) {
   async function deployWebApp({
     workspace,
     pm = 'npm',
-    sshConfig,
+    sshKey,
     remotePath,
     target = 'dist',
     subCommand = 'build'
@@ -265,14 +265,14 @@ export default function loadCommands(actions, utils, mergedVars) {
       outputDir: './releases'
     })
 
-    // 上传到远程服务器
+    // 上传到远程服务器（sshKey 对应 omniflow.yaml 中 ssh 配置的 key）
     const filename = archivePath.split('/').pop()
     const remoteTarPath = `/tmp/${filename}`
-    await ssh.cp(sshConfig, archivePath, remoteTarPath)
+    await ssh.cp(sshKey, archivePath, remoteTarPath)
 
     // 远程解压并部署
     await ssh.exec(
-      sshConfig,
+      sshKey,
       `mkdir -p ${remotePath} && tar -xzf ${remoteTarPath} -C ${remotePath} && rm ${remoteTarPath}`
     )
 
@@ -285,14 +285,14 @@ export default function loadCommands(actions, utils, mergedVars) {
   async function deployDockerCompose({
     workDir,
     tplFile,
-    sshConfig,
+    sshKey,
     remoteDir,
     preCommands,
     composeCommands = 'up -d'
   }) {
-    // 使用 omniflow 提供的 docker compose 操作
+    // 使用 omniflow 提供的 docker compose 操作（sshKey 对应 omniflow.yaml 中 ssh 配置的 key）
     await docker.composeOnRemote(
-      sshConfig,
+      sshKey,
       remoteDir,
       tplFile,
       composeCommands,
@@ -317,11 +317,9 @@ export default function loadCommands(actions, utils, mergedVars) {
 async function build(ctx, folder, args) {
   // ctx.commands 包含从 bin/index.js 加载的自定义命令
 
-  // 使用自定义的 remoteDeploy 命令
+  // 使用自定义的 remoteDeploy 命令（sshKey 对应 omniflow.yaml 中 ssh 配置的 key）
   await ctx.commands.remoteDeploy({
-    host: '192.168.1.100',
-    user: 'deploy',
-    privateKeyFile: '~/.ssh/deploy_key',
+    sshKey: 'test',  // 使用 omniflow.yaml 中 ssh.test 配置
     remotePath: '/opt/myapp',
     command: 'git pull && npm install && pm2 restart app'
   })
@@ -346,9 +344,9 @@ export { build }
 |------|------|------|
 | `shell` | Shell 命令执行 | `exec(cmd)` |
 | `node` | Node.js 操作 | `install`, `build`, `execute`, `getPackageInfo` |
-| `ssh` | SSH/SCP 操作 | `exec(config, command, remoteDir)`, `cp(config, srcFile, targetFolder)` |
+| `ssh` | SSH/SCP 操作 | `exec(sshKey, command, remoteDir)`, `cp(sshKey, srcFile, targetFolder)` |
 | `web` | Web 前端构建 | `build(opts)` |
-| `docker` | Docker Compose | `compose(targetDir, tplFile, preCommands)`, `composeOnRemote(sshConfig, targetDir, tplFile, preCommands)` |
+| `docker` | Docker Compose | `compose(targetDir, tplFile, preCommands)`, `composeOnRemote(sshKey, targetDir, tplFile, preCommands)` |
 
 **可用的 utils：**
 
@@ -742,36 +740,40 @@ await ctx.actions.node.execute(ctx.projectRoot, 'pnpm', 'test', ['--coverage'])
 
 | 方法 | 说明 |
 |------|------|
-| `ssh.exec(sshConfig, command, remoteDir)` | 在远程服务器执行命令 |
-| `ssh.cp(sshConfig, srcFile, targetFolder)` | 复制文件到远程服务器 |
+| `ssh.exec(sshKey, command, remoteDir)` | 在远程服务器执行命令 |
+| `ssh.cp(sshKey, srcFile, targetFolder)` | 复制文件到远程服务器 |
 
-**sshConfig 结构：**
+**sshKey** 是 `omniflow.yaml` 中 `ssh` 配置的 key，例如：
 
-```typescript
-interface SshConnectionConfig {
-  host: string           // 主机地址
-  user: string           // 用户名
-  port?: number          // 端口，默认 22
-  password?: string      // 密码（可选）
-  privateKey?: string    // 私钥内容（可选）
-  privateKeyFile?: string // 私钥文件路径（可选）
-}
+```yaml
+omniflow:
+  ssh:
+    test:
+      server: test.example.com
+      user: deploy
+      private_key_file: ~/.ssh/id_rsa
+      port: 22
+    prod:
+      server: prod.example.com
+      user: deploy
+      private_key_file: ~/.ssh/id_rsa
+      port: 22
 ```
 
 **使用示例：**
 
 ```javascript
-// 执行远程命令
+// 执行远程命令（使用 'test' 配置）
 const result = await ctx.actions.ssh.exec(
-  { host: '192.168.1.100', user: 'deploy', privateKeyFile: '~/.ssh/id_rsa' },
+  'test',  // 对应 omniflow.yaml 中 ssh.test 配置
   'ls -la',
   '/opt/app'  // remoteDir（可选）
 )
 console.log(result.stdout)
 
-// 复制文件到远程
+// 复制文件到远程（使用 'prod' 配置）
 await ctx.actions.ssh.cp(
-  { host: '192.168.1.100', user: 'deploy', privateKeyFile: '~/.ssh/id_rsa' },
+  'prod',  // 对应 omniflow.yaml 中 ssh.prod 配置
   './app.tar.gz',
   '/opt/app/app.tar.gz'
 )
@@ -815,7 +817,7 @@ const archivePath = await ctx.actions.web.build({
 | 方法 | 说明 |
 |------|------|
 | `docker.compose(targetDir, tplFile, preCommands)` | 本地 Docker Compose |
-| `docker.composeOnRemote(sshConfig, targetDir, tplFile, preCommands)` | 远程 Docker Compose |
+| `docker.composeOnRemote(sshKey, targetDir, tplFile, preCommands)` | 远程 Docker Compose |
 
 **使用示例：**
 
@@ -827,9 +829,9 @@ await ctx.actions.docker.compose(
   'mkdir -p data'    // 预处理命令（可选）
 )
 
-// 远程 docker-compose
+// 远程 docker-compose（使用 omniflow.yaml 中配置的 ssh key）
 await ctx.actions.docker.composeOnRemote(
-  { host: '192.168.1.100', user: 'deploy', privateKeyFile: '~/.ssh/key' },
+  'test',  // 对应 omniflow.yaml 中 ssh.test 配置
   '/opt/app',
   'docker-compose.yml',
   'mkdir -p /opt/data'  // 预处理命令（可选）

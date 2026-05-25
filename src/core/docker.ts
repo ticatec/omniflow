@@ -14,9 +14,9 @@
  *   'up -d'
  * )
  *
- * // Remote docker-compose
+ * // Remote docker-compose (using SSH key from config)
  * await docker.composeOnRemote(
- *   { host: '192.168.1.100', user: 'deploy', privateKeyFile: '/path/to/key' },
+ *   'my-server',
  *   '/opt/app',
  *   './docker-compose.yml',
  *   'up -d',
@@ -29,7 +29,7 @@ import * as path from 'path';
 import {promises as pfs} from 'fs';
 import * as fs from 'fs';
 import {$} from './shell.js';
-import ssh, {type SshConnectionConfig} from './ssh.js';
+import ssh from './ssh.js';
 
 
 function createComposeCommands(workDir: string, preCommands: string): string {
@@ -95,7 +95,7 @@ async function compose(targetDir: string, tplFile: string, preCommands: string):
  * 2. Execute pre-commands if provided
  * 3. Execute docker-compose commands
  *
- * @param sshConfig - SSH connection configuration
+ * @param sshKey - SSH server key from config
  * @param targetDir - Target directory on remote server
  * @param tplFile - Path to local docker-compose template file
  * @param preCommands - Optional commands to run before docker-compose
@@ -103,7 +103,7 @@ async function compose(targetDir: string, tplFile: string, preCommands: string):
  * @example
  * ```ts
  * await docker.composeOnRemote(
- *   { host: '192.168.1.100', user: 'deploy', privateKeyFile: '/path/to/key' },
+ *   'my-server',
  *   '/opt/myapp',
  *   './docker-compose.yml',
  *   'up -d --build'
@@ -111,7 +111,7 @@ async function compose(targetDir: string, tplFile: string, preCommands: string):
  *
  * // With pre-commands
  * await docker.composeOnRemote(
- *   { host: '192.168.1.100', user: 'deploy', privateKeyFile: '/path/to/key' },
+ *   'my-server',
  *   '/opt/myapp',
  *   './docker-compose.yml',
  *   'up -d',
@@ -120,19 +120,19 @@ async function compose(targetDir: string, tplFile: string, preCommands: string):
  * ```
  */
 async function composeOnRemote(
-    sshConfig: SshConnectionConfig,
+    sshKey: string,
     targetDir: string,
     tplFile: string,
     preCommands?: string
 ): Promise<void> {
-    console.log(`  🐳 Remote Docker Compose: ${sshConfig.user}@${sshConfig.host}:${sshConfig.port || 22}`);
+    console.log(`  🐳 Remote Docker Compose: ${sshKey}`);
     console.log(`     Target: ${targetDir}`);
     console.log(`     Template: ${tplFile}`);
 
     // 1. Copy template file to remote (creates directory if needed)
-    await ssh.cp(sshConfig, tplFile, targetDir);
+    await ssh.cp(sshKey, tplFile, targetDir);
 
-    const result = await ssh.exec(sshConfig, createComposeCommands(targetDir, preCommands??''))
+    const result = await ssh.exec(sshKey, createComposeCommands(targetDir, preCommands??''))
 
     if (result.exitCode !== 0) {
         throw new Error(`Docker compose failed: ${result.stderr}`);

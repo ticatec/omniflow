@@ -9,7 +9,7 @@ import type {
     EnvironmentConfig,
     ProjectNode
 } from '../types/config.js'
-import {getMergedVars as mergeVars, VarValue} from './vars.js'
+import {getMergedVars as mergeVars, collectVarsFromPath, VarValue} from './vars.js'
 import {SettingsManager, settingsManager} from './settings.js'
 import {ProjectManager} from './projects.js'
 import {getGitConfig} from './git.js'
@@ -413,7 +413,7 @@ export class OmniflowConfigLoader {
 
     /**
      * Get merged variables for a project and environment
-     * Priority: omniflow.env -> envConfig.vars (later overrides earlier)
+     * Priority: omniflow.env -> parent folders.vars -> project.vars -> environment.vars
      * String values override, array and object values are merged
      */
     getMergedVars(projectPath: string, envName: string): Record<string, VarValue> {
@@ -422,11 +422,18 @@ export class OmniflowConfigLoader {
             throw new Error(`Environment not found: ${envName}`)
         }
 
-        // Start with global vars
-        const result: Record<string, VarValue> = {...(this.config.omniflow?.env || {})}
+        // Split project path into parts (e.g., "omni-gate/platform" -> ["omni-gate", "platform"])
+        const pathParts = projectPath.split('/')
 
-        // Merge with environment vars (highest priority)
-        return mergeVars(result, envConfig)
+        // Collect vars from: omniflow.env -> parent folders -> project
+        const pathVars = collectVarsFromPath(
+            pathParts,
+            this.config.omniflow?.env,
+            this.config.projects
+        )
+
+        // Finally merge with environment vars (highest priority)
+        return mergeVars(pathVars, envConfig)
     }
 
     /**

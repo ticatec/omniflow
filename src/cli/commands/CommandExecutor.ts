@@ -155,6 +155,9 @@ export default class CommandExecutor {
         const mergedVars = this.loader.getMergedVars(this.projectKey, this.envName)
         const sshConfig = this.loader.getSshConfig()
 
+        // Set SSH config map for ssh actions
+        sshActions.setSshConfigMap(sshConfig)
+
         const actions = {
             shell: {
                 exec: async (cmd: string) => {
