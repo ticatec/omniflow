@@ -151,8 +151,8 @@ config.git/
 
 **文件格式要求：**
 - 位置：配置仓库的 `bin/index.js`
-- 必须导出一个默认函数 `export default function loadCommands(actions, utils)`
-- 函数接收 omniflow 提供的 `actions` 和 `utils` 作为参数
+- 必须导出一个默认函数 `export default function loadCommands(actions, utils, mergedVars)`
+- 函数接收 omniflow 提供的 `actions`、`utils` 和 `mergedVars` 作为参数
 - 函数返回一个包含自定义命令的对象
 
 **完整示例：**
@@ -163,7 +163,7 @@ config.git/
  * 位置：配置仓库/bin/index.js
  *
  * 必须导出默认函数：
- * export default function loadCommands(actions, utils) { return {...} }
+ * export default function loadCommands(actions, utils, mergedVars) { return {...} }
  */
 
 // 导入各模块（如果需要分文件组织）
@@ -174,6 +174,7 @@ config.git/
  * loadCommands - omniflow 加载命令的入口函数
  * @param {Object} actions - omniflow 提供的核心操作
  * @param {Object} utils - omniflow 提供的工具函数
+ * @param {Object} mergedVars - 合并后的环境变量 (omniflow.env + environment.vars)
  * @returns {Object} 自定义命令对象
  *
  * actions 包含:
@@ -189,8 +190,12 @@ config.git/
  *   - formatTemplate(content, variables)
  *   - mergeComposeEnv({ envInputs, indent })
  *   - tar({ sourceDir, filename, outputDir })
+ *
+ * mergedVars 包含:
+ *   - 全局环境变量 omniflow.env 和环境变量 environment.vars 合并后的结果
+ *   - 可以直接在自定义命令中使用这些变量
  */
-export default function loadCommands(actions, utils) {
+export default function loadCommands(actions, utils, mergedVars) {
   const { ssh, node, web, docker } = actions
 
   /**

@@ -1,6 +1,6 @@
 {
   "name": "@ticatec/omniflow",
-  "version": "0.3.2",
+  "version": "0.3.3",
 
   "description": "Unified CI/CD pipeline manager with centralized scheduling - manage all projects from one config file while keeping deployment scripts in their repositories",
   "type": "module",

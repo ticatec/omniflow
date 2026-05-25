@@ -443,13 +443,15 @@ export class OmniflowConfigLoader {
      * This allows plugins to share omniflow's dependencies
      *
      * The file must export a default function:
-     * export default function loadCommands(actions, utils) {
+     * export default function loadCommands(actions, utils, mergedVars) {
      *   return { myAction: async (opts) => { ... } }
      * }
      *
-     * Returns the commands object or empty object if file doesn't exist
+     * @param actions - Omniflow 提供的核心操作 (shell, git, node, ssh, web, docker)
+     * @param mergedVars - 合并后的环境变量 (omniflow.env + environment.vars)
+     * @returns 自定义命令对象，如果文件不存在则返回空对象
      */
-    async loadCommands(actions: any): Promise<Object> {
+    async loadCommands(actions: any, mergedVars: any): Promise<Object> {
         const OMNIFLOW_HOME = await this.settings.getOmniflowHome()
 
         // Try omniflow installation directory first, then OMNIFLOW_HOME/plugins
@@ -479,7 +481,7 @@ export class OmniflowConfigLoader {
                     throw new Error(`index.js must export a default function`)
                 }
 
-                const commands = commandsModule.default(actions, utils)
+                const commands = commandsModule.default(actions, utils, mergedVars)
                 return commands || {}
             } catch (error) {
                 throw new Error(`Failed to load commands from ${commandsPath}: ${(error as Error).message}`)

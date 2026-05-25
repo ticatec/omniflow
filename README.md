@@ -140,8 +140,8 @@ Create `bin/index.js` in the configuration repository to define common commands 
 
 **File Format Requirements:**
 - Location: `bin/index.js` in the config repository
-- Must export a default function: `export default function loadCommands(actions, utils)`
-- Function receives `actions` and `utils` provided by omniflow
+- Must export a default function: `export default function loadCommands(actions, utils, mergedVars)`
+- Function receives `actions`, `utils`, and `mergedVars` provided by omniflow
 - Function returns an object containing custom commands
 
 **Complete Example:**
@@ -152,13 +152,14 @@ Create `bin/index.js` in the configuration repository to define common commands 
  * Location: Configuration repository root (same level as omniflow.yaml)
  *
  * Must export default function:
- * export default function loadCommands(actions, utils) { return {...} }
+ * export default function loadCommands(actions, utils, mergedVars) { return {...} }
  */
 
 /**
  * loadCommands - entry point for omniflow to load commands
  * @param {Object} actions - core operations provided by omniflow
  * @param {Object} utils - utility functions provided by omniflow
+ * @param {Object} mergedVars - merged environment variables (omniflow.env + environment.vars)
  * @returns {Object} custom commands object
  *
  * actions includes:
@@ -174,8 +175,12 @@ Create `bin/index.js` in the configuration repository to define common commands 
  *   - formatTemplate(content, variables)
  *   - mergeComposeEnv({ envInputs, indent })
  *   - tar({ sourceDir, filename, outputDir })
+ *
+ * mergedVars includes:
+ *   - Merged result of global env (omniflow.env) and environment vars (environment.vars)
+ *   - Can be used directly in custom commands
  */
-export default function loadCommands(actions, utils) {
+export default function loadCommands(actions, utils, mergedVars) {
   const { ssh, node, web, docker } = actions
 
   /**

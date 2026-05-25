@@ -173,7 +173,7 @@ export default class CommandExecutor {
 
         await this.fetchProject()
 
-        const sharedCommands = await this.loader.loadCommands(actions)
+        const sharedCommands = await this.loader.loadCommands(actions, mergedVars)
 
         this.context = {
             workspace: this.projectRoot,
