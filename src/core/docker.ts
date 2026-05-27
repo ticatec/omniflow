@@ -25,16 +25,15 @@
  * ```
  */
 
-import * as path from 'path';
-import {promises as pfs} from 'fs';
 import * as fs from 'fs';
 import {$} from './shell.js';
 import ssh from './ssh.js';
 
+const pfs = fs.promises;
+
 
 function createComposeCommands(workDir: string, preCommands: string): string {
-    return `mkdir ${workDir} -p
-    cd ${workDir}
+    return `cd ${workDir}
 ${preCommands}
 docker compose up -d`
 }
@@ -69,7 +68,7 @@ async function compose(targetDir: string, tplFile: string, preCommands: string):
 
     if (!fs.existsSync(targetDir)) {
         console.log(`创建docker 应用主目录`)
-        await pfs.mkdir(targetDir, '-p');
+        await pfs.mkdir(targetDir, { recursive: true });
     }
 
     await $`cp ${tplFile} ${targetDir}/`;
