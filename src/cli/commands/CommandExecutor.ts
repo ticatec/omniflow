@@ -1,5 +1,6 @@
 import type {CommandDefinition, ModuleConfig} from '../../types/config.js'
 import {$} from '../../core/shell.js'
+import {execa} from '../../core/shell.js'
 import path from "path"
 import {OmniflowConfigLoader} from "../../config/index.js"
 import {EnvironmentConfig} from "../../types/config.js"
@@ -161,7 +162,8 @@ export default class CommandExecutor {
         const actions = {
             shell: {
                 exec: async (cmd: string) => {
-                    const result = await $`${cmd}`
+                    // Use execa with bash for multi-line commands
+                    const result = await execa('bash', ['-c', cmd])
                     return {stdout: result.stdout, stderr: result.stderr}
                 }
             },

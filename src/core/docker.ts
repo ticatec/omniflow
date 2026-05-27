@@ -33,7 +33,8 @@ import ssh from './ssh.js';
 
 
 function createComposeCommands(workDir: string, preCommands: string): string {
-    return `cd ${workDir}
+    return `mkdir ${workDir} -p
+    cd ${workDir}
 ${preCommands}
 docker compose up -d`
 }
