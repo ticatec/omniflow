@@ -14,6 +14,8 @@ export interface RepoInfo {
     repo: string
     /** Full server URL with protocol (e.g., https://github.com) */
     serverUrl: string
+    /** Context path for sub-path deployment (e.g., '/git' for https://example.com/git) */
+    contextPath?: string
     /** Authentication token */
     token: string
 }
@@ -47,9 +49,10 @@ export interface MergeRequestStrategy {
   /**
    * Parse repository URL to extract repo info
    * @param url - Git repository URL (http/https format only)
+   * @param contextPath - Optional context path for sub-path deployment (e.g., '/git')
    * @returns Repository info or null if parsing fails
    */
-  parseUrl(url: string): RepoInfo | null
+  parseUrl(url: string, contextPath?: string): RepoInfo | null
 
   /**
    * Check if two branches have differences

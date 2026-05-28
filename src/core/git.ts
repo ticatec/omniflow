@@ -13,6 +13,7 @@ export interface GitConfig {
     password?: string
     merge_from?: string
     strategy: string  // 'github' | 'gitlab' | 'forgejo'
+    contextPath?: string  // 子路径部署，如 '/git'
 }
 
 export interface CloneOptions {
@@ -65,7 +66,8 @@ async function sync(config: GitConfig, targetDir: string): Promise<void> {
             sourceBranch: config.merge_from,
             targetBranch: branch,
             token: config.password || '',
-            strategy: config.strategy
+            strategy: config.strategy,
+            contextPath: config.contextPath
         })
         if (mergeResult.merged) {
             console.log(`  ✓ Merge completed`)

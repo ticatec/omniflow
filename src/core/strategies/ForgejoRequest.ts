@@ -18,7 +18,7 @@ export default class ForgejoRequest extends BaseMergeRequest {
      * Build Forgejo/Gitea API URL for the repository
      */
     protected buildApiUrl(repoInfo: RepoInfo): string {
-        const url = `${repoInfo.serverUrl}/api/v1/repos/${repoInfo.owner}/${repoInfo.repo}/pulls`
+        const url = `${repoInfo.serverUrl}${repoInfo.contextPath || ''}/api/v1/repos/${repoInfo.owner}/${repoInfo.repo}/pulls`
         console.log(`  🔍 Debug: API URL = ${url}`)
         return url
     }
@@ -28,7 +28,7 @@ export default class ForgejoRequest extends BaseMergeRequest {
      */
     async checkBranchesHaveChanges(repoInfo: RepoInfo, source: string, target: string): Promise<{hasChanges: boolean; ahead?: number; behind?: number; diffFiles?: number; commits?: number}> {
         try {
-            const compareUrl = `${repoInfo.serverUrl}/api/v1/repos/${repoInfo.owner}/${repoInfo.repo}/compare/${target}...${source}`
+            const compareUrl = `${repoInfo.serverUrl}${repoInfo.contextPath || ''}/api/v1/repos/${repoInfo.owner}/${repoInfo.repo}/compare/${target}...${source}`
             console.log(`  🔍 Compare URL: ${compareUrl.replace(repoInfo.token, '***')}`)
 
             const response = await fetch(compareUrl, {

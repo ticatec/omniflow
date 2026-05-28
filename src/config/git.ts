@@ -18,6 +18,7 @@ export function getGitConfig(config: OmniflowConfig, projectPath: string, envNam
   password?: string
   merge_from?: string
   strategy: string
+  contextPath?: string
 } | null {
   // Find project by path
   const pathParts = projectPath.split('/')
@@ -71,7 +72,8 @@ export function getGitConfig(config: OmniflowConfig, projectPath: string, envNam
     username: projectRepos?.username || globalGit?.username,
     password: projectRepos?.password || globalGit?.password,
     merge_from: mergeFrom,
-    strategy: strategy
+    strategy: strategy,
+    contextPath: project?.vars?.GIT_CONTEXT || config.omniflow.env?.GIT_CONTEXT || process.env.GIT_CONTEXT
   }
 }
 

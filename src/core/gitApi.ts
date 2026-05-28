@@ -12,6 +12,7 @@ export interface MergeOptions {
     targetBranch: string
     token: string
     strategy: string  // Must be specified: 'github', 'gitlab', or 'forgejo'
+    contextPath?: string  // Optional context path for sub-path deployment
 }
 
 export interface MergeResult {
@@ -40,7 +41,7 @@ async function merge(options: MergeOptions): Promise<MergeResult> {
     }
 
     // Parse URL to get repo info
-    const repoInfo = strategyInstance.parseUrl(repoUrl)
+    const repoInfo = strategyInstance.parseUrl(repoUrl, options.contextPath)
     if (!repoInfo) {
         return {
             success: false,

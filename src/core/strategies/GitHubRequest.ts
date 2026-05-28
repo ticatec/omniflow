@@ -17,8 +17,8 @@ export default class GitHubRequest extends BaseMergeRequest {
      * Parse GitHub URL
      * Handles both github.com and GitHub Enterprise URLs
      */
-    parseUrl(url: string): RepoInfo | null {
-        const result = super.parseUrl(url)
+    parseUrl(url: string, contextPath?: string): RepoInfo | null {
+        const result = super.parseUrl(url, contextPath)
         if (!result) return null
 
         // GitHub API base is different from web URL

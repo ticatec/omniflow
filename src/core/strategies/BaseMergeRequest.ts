@@ -16,8 +16,10 @@ export default abstract class BaseMergeRequest implements MergeRequestStrategy {
     /**
      * Parse repository URL to extract repo info
      * Default implementation handles standard http/https Git URLs
+     * @param url - Git repository URL
+     * @param contextPath - Optional context path for sub-path deployment (e.g., '/git')
      */
-    parseUrl(url: string): RepoInfo | null {
+    parseUrl(url: string, contextPath?: string): RepoInfo | null {
         try {
             // Only http/https URLs are supported
             if (!url.startsWith('http://') && !url.startsWith('https://')) {
@@ -38,7 +40,15 @@ export default abstract class BaseMergeRequest implements MergeRequestStrategy {
             const platform = urlObj.hostname
             const serverUrl = `${urlObj.protocol}//${platform}`
 
-            return { platform, owner, repo, serverUrl, token: '' }
+            // Normalize context path (ensure it starts with / and doesn't end with /)
+            const normalizedContextPath = contextPath
+                ? contextPath.startsWith('/') ? contextPath : `/${contextPath}`
+                : ''
+            const finalContextPath = normalizedContextPath.endsWith('/') && normalizedContextPath.length > 1
+                ? normalizedContextPath.slice(0, -1)
+                : normalizedContextPath
+
+            return { platform, owner, repo, serverUrl, contextPath: finalContextPath, token: '' }
         } catch (error) {
             console.log(`  ⚠️  Failed to parse URL: ${(error as Error).message}`)
             return null

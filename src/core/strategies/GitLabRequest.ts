@@ -17,7 +17,7 @@ export default class GitLabRequest extends BaseMergeRequest {
      * Build GitLab API URL for the repository
      */
     protected buildApiUrl(repoInfo: RepoInfo): string {
-        const apiBase = `${repoInfo.serverUrl}/api/v4`
+        const apiBase = `${repoInfo.serverUrl}${repoInfo.contextPath || ''}/api/v4`
         return `${apiBase}/projects/${encodeURIComponent(`${repoInfo.owner}/${repoInfo.repo}`)}/merge_requests`
     }
 
@@ -26,7 +26,7 @@ export default class GitLabRequest extends BaseMergeRequest {
      */
     async checkBranchesHaveChanges(repoInfo: RepoInfo, source: string, target: string): Promise<{hasChanges: boolean; ahead?: number; behind?: number; diffFiles?: number; commits?: number}> {
         try {
-            const apiBase = `${repoInfo.serverUrl}/api/v4`
+            const apiBase = `${repoInfo.serverUrl}${repoInfo.contextPath || ''}/api/v4`
             const projectId = encodeURIComponent(`${repoInfo.owner}/${repoInfo.repo}`)
             const compareUrl = `${apiBase}/projects/${projectId}/repository/compare?from=${target}&to=${source}`
             console.log(`  🔍 Compare URL: ${compareUrl.replace(repoInfo.token, '***')}`)
