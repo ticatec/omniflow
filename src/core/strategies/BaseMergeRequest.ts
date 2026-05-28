@@ -48,6 +48,8 @@ export default abstract class BaseMergeRequest implements MergeRequestStrategy {
                 ? normalizedContextPath.slice(0, -1)
                 : normalizedContextPath
 
+            console.log(`  🔍 Debug: contextPath input = "${contextPath}", final = "${finalContextPath}"`)
+
             return { platform, owner, repo, serverUrl, contextPath: finalContextPath, token: '' }
         } catch (error) {
             console.log(`  ⚠️  Failed to parse URL: ${(error as Error).message}`)

@@ -246,6 +246,7 @@ export class OmniflowConfigLoader {
         password?: string
         merge_from?: string
         strategy: string
+        contextPath?: string
     } {
         const gitConfig = getGitConfig(this.config, projectPath, envName)
         if (!gitConfig) {

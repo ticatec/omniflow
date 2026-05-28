@@ -60,38 +60,21 @@ export async function getGitStatus(targetDir: string): Promise<GitStatusResult> 
  * Clone a git repository
  */
 async function cloneRepo(url: string, targetDir: string, branch?: string): Promise<void> {
-    let cloneCmd = `git clone --depth 1 --single-branch`
+    let cloneCmd = `git clone --depth 1`
     if (branch) {
-        cloneCmd += ` --branch ${branch}`
+        cloneCmd += ` --branch ${branch} --single-branch`
     }
 
-    // Clone to temporary subdirectory first
-    const tmpDir = path.join(targetDir, '.omniflow-tmp-clone')
-    cloneCmd += ` ${url} ${tmpDir}`
-
-    await execAsync(cloneCmd, {
+    await execAsync(`${cloneCmd} ${url} ${targetDir}`, {
         env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
     })
-
-    // Move contents from temp subdirectory to target directory
-    const files = await fs.readdir(tmpDir, { withFileTypes: true })
-
-    for (const file of files) {
-        await fs.rename(
-            path.join(tmpDir, file.name),
-            path.join(targetDir, file.name)
-        )
-    }
-
-    // Remove temp directory
-    await fs.rm(tmpDir, { recursive: true, force: true })
 }
 
 /**
  * Fetch from remote
  */
 async function fetch(targetDir: string, branch: string): Promise<void> {
-    await execAsync(`git fetch origin ${branch}`, {
+    await execAsync(`git fetch origin ${branch}:${branch}`, {
         cwd: targetDir,
         env: { ...process.env, GIT_TERMINAL_PROMPT: '0' }
     })

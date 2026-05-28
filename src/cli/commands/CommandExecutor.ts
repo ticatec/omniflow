@@ -228,7 +228,8 @@ export default class CommandExecutor {
                 merge_from: this.envConfig.merge_from,
                 strategy: gitConfig.strategy,
                 username: gitConfig.username,
-                password: gitConfig.password
+                password: gitConfig.password,
+                contextPath: gitConfig.contextPath
             },
             this.projectRoot
         )

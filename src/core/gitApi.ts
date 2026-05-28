@@ -29,6 +29,7 @@ async function merge(options: MergeOptions): Promise<MergeResult> {
     const { repoUrl, sourceBranch, targetBranch, token, strategy } = options
 
     console.log(`  📨 Processing merge request: ${sourceBranch} → ${targetBranch}`)
+    console.log(`  🔍 Debug: contextPath in options = "${options.contextPath}"`)
 
     // Get specified strategy
     const strategyInstance = strategyRegistry.get(strategy)
